@@ -11,9 +11,18 @@ acts in one more call.
 
 ## Install
 
+```sh
+brew install rafi/tap/pajama
+```
+
+Homebrew also installs tmux, fzf, the man page and the completions. The omp resume example
+lands in `$(brew --prefix)/share/pajama/examples`.
+
+### Manual install
+
 Download a build for Linux or macOS from the
-[releases](https://github.com/rafi/pajama/releases). Each archive holds `pj`, the man page
-and the completions. Or build it yourself:
+[releases](https://github.com/rafi/pajama/releases). Each archive holds `pj`, the man
+page, the completions and the examples. Or build it yourself:
 
 ```sh
 cargo install --path .
