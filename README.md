@@ -21,6 +21,12 @@ cp completions/pj.bash ~/.local/share/bash-completion/completions/pj # bash
 cp completions/_pj ~/.zfunc/                                        # zsh, with ~/.zfunc on $fpath before compinit
 ```
 
+The man page:
+
+```sh
+cp man/pj.1 ~/.local/share/man/man1/
+```
+
 Needs tmux, and fzf 0.66 or newer for the picker.
 
 ## Usage

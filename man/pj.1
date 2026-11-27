@@ -1,0 +1,173 @@
+.TH PJ 1 2026-11-27 pajama "User Commands"
+.SH NAME
+pj \- open a tmux session per project
+.SH SYNOPSIS
+.B pj
+.RI [ PATH | NAME | \- ]
+.br
+.B pj save
+.RI [ NAME ]
+.br
+.B pj stop
+.RI [ NAME ]
+.br
+.B pj
+.BR \-\-version | \-\-help
+.SH DESCRIPTION
+.B pj
+opens one tmux session per project directory, by path, folder name, fuzzy picker or
+history.
+Each project keeps its window and pane layout, and the programs you choose come back
+when it reopens.
+.PP
+Inside tmux
+.B pj
+switches the client to the session, outside tmux it attaches.
+A layout is saved when you detach from its session, and on
+.B pj save
+and
+.BR "pj stop" .
+.PP
+The projects
+.B pj
+knows are the ones in its history and the sessions it is running.
+.SH COMMANDS
+.TP
+.BI pj " PATH"
+Open the project at directory
+.IR PATH ,
+creating its session from the saved layout if it is not running.
+An argument is a path when it contains
+.BR / ,
+is
+.B .\&
+or
+.BR .. ,
+or starts with
+.BR ~ .
+.TP
+.BI pj " NAME"
+Open the project whose folder is named
+.IR NAME .
+Running session names match too, ignoring the marks agent tools append, so
+.B main\[u23F3]
+matches
+.BR main .
+A session
+.B pj
+did not create matches only when no project does.
+With several matches or none, the picker opens with
+.I NAME
+typed in.
+.TP
+.B pj
+Pick a project or session with fzf, most recent first.
+.TP
+.B pj \-
+Go back to the previous project or session.
+.TP
+.BR "pj save " [ \fINAME\fR ]
+Save the layout of session
+.IR NAME ,
+the current one by default.
+.I NAME
+is a session name as
+.B tmux ls
+shows it.
+.TP
+.BR "pj stop " [ \fINAME\fR ]
+Save the layout and close the session.
+.TP
+.B \-\-version
+Print the package name and version.
+.TP
+.BR \-h ", " \-\-help
+Print usage.
+.SH PICKER
+.B \[u25B8]
+marks the session you are in,
+.B \[u25CF]
+a running project, and
+.B \[u25C7]
+a session
+.B pj
+did not create.
+A stopped project shows its saved window count and the age of its layout.
+.PP
+The preview shows the worktrunk
+.B wt list
+table of the folder's worktrees when
+.B wt
+is installed, then the last 15 commits.
+.B alt\-p
+hides the preview, and
+.B ctrl\-u
+and
+.B ctrl\-d
+scroll it.
+.SH BRINGING PROGRAMS BACK
+When
+.B pj
+saves a pane, it looks at the program the pane's shell runs.
+.IP \(bu 2
+The
+.B programs
+file lists program names, one per line, with
+.B #
+starting a comment.
+A listed program comes back with its full command line.
+.IP \(bu 2
+An executable
+.BI resume/ NAME
+decides for program
+.IR NAME ,
+listed or not.
+It gets the program's PID as its argument and prints the command to type when the
+session comes back, or nothing for a plain shell.
+.SH FILES
+.TP
+.IB $XDG_STATE_HOME /pj/ PATH .tsv
+The saved layout of the project at
+.IR PATH ,
+with each
+.B /
+written as
+.BR % .
+.TP
+.IB $XDG_STATE_HOME /pj/recent
+Project history, most recent first.
+.TP
+.IB $XDG_CONFIG_HOME /pj/default.tsv
+The layout for a project with no saved layout.
+Without it a new project gets one shell window.
+.TP
+.IB $XDG_CONFIG_HOME /pj/programs
+Programs to rerun.
+.TP
+.IB $XDG_CONFIG_HOME /pj/resume/ NAME
+Resume script for program
+.IR NAME .
+.PP
+.B XDG_STATE_HOME
+defaults to
+.IR ~/.local/state ,
+and
+.B XDG_CONFIG_HOME
+to
+.IR ~/.config .
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+The project, session or history entry was not found, fzf is missing, or tmux failed.
+.TP
+.B 2
+Bad arguments, or the picker is needed without a terminal.
+.TP
+.B 130
+The picker was cancelled.
+.SH SEE ALSO
+.BR tmux (1),
+.BR fzf (1)
