@@ -124,12 +124,20 @@ mod procfs {
     use std::fs;
 
     pub fn children(pid: u32) -> Vec<u32> {
-        // Kernels built with CONFIG_PROC_CHILDREN list a thread's children directly.
-        if let Ok(text) = fs::read_to_string(format!("/proc/{pid}/task/{pid}/children")) {
-            return text
-                .split_whitespace()
-                .filter_map(|p| p.parse().ok())
+        // Kernels built with CONFIG_PROC_CHILDREN list each thread's children directly. A
+        // thread lists only the children it forked itself, so every thread is read.
+        if let Ok(tasks) = fs::read_dir(format!("/proc/{pid}/task")) {
+            let lists: Vec<String> = tasks
+                .flatten()
+                .filter_map(|task| fs::read_to_string(task.path().join("children")).ok())
                 .collect();
+            if !lists.is_empty() {
+                return lists
+                    .iter()
+                    .flat_map(|text| text.split_whitespace())
+                    .filter_map(|p| p.parse().ok())
+                    .collect();
+            }
         }
         let Ok(dir) = fs::read_dir("/proc") else {
             return Vec::new();
@@ -204,12 +212,19 @@ mod tests {
             .arg("5")
             .spawn()
             .unwrap();
-        let found = super::first_child(std::process::id()).map(|p| (p.pid, p.args));
+        let expected = Some((child.id(), vec!["sleep".to_owned(), "5".to_owned()]));
+        // Linux lets spawn return while exec still swaps the program, so for a moment the
+        // child shows the test's own arguments or none.
+        let mut found = None;
+        for _ in 0..100 {
+            found = super::first_child(std::process::id()).map(|p| (p.pid, p.args));
+            if found == expected {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         child.kill().unwrap();
         child.wait().unwrap();
-        assert_eq!(
-            found,
-            Some((child.id(), vec!["sleep".to_owned(), "5".to_owned()]))
-        );
+        assert_eq!(found, expected);
     }
 }
