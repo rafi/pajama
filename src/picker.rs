@@ -302,15 +302,16 @@ pub fn preview(target: &str) {
         target.to_owned()
     } else {
         // A session pj did not create has no project, so its active pane's folder stands in.
-        let out = tmux::run(&[
-            "list-sessions",
-            "-F",
-            "#{@pj_root}\x1f#{session_name}\x1f#{pane_current_path}",
-        ]);
+        // Sessions pj created print an empty line, and the folder comes last since it may
+        // hold a tab.
+        let format = format!(
+            "#{{?@pj_root,,#{{session_name}}{}#{{pane_current_path}}}}",
+            tmux::SEP
+        );
+        let out = tmux::run(&["list-sessions", "-F", &format]);
         let found = out.stdout.lines().find_map(|line| {
-            let f: Vec<&str> = line.split('\x1f').collect();
-            (f.len() == 3 && f[0].is_empty() && crate::text::plain_name(f[1]) == target)
-                .then(|| f[2].to_owned())
+            let (name, dir) = line.split_once(tmux::SEP)?;
+            (crate::text::plain_name(name) == target).then(|| dir.to_owned())
         });
         match found {
             Some(dir) => dir,

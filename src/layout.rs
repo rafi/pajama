@@ -16,33 +16,37 @@ use crate::tmux;
 /// Saves session ID to the layout file of its project. Sessions pj did not create have no
 /// project, so they are never saved.
 pub fn save(id: &str) -> bool {
+    // The root comes on its own line and each pane's folder last, so a tab in either stays
+    // inside its field.
     let format = [
-        "#{@pj_root}",
         "#{window_index}",
         "#{window_layout}",
         "#{window_active}",
         "#{pane_active}",
-        "#{pane_current_path}",
         "#{pane_pid}",
+        "#{pane_current_path}",
     ]
-    .join("\x1f");
-    let out = tmux::run(&["list-panes", "-s", "-t", id, "-F", &format]);
+    .join(tmux::SEP);
+    #[rustfmt::skip]
+    let out = tmux::run(&[
+        "display", "-p", "-t", id, "#{@pj_root}", ";",
+        "list-panes", "-s", "-t", id, "-F", &format,
+    ]);
     if !out.ok {
         return false;
     }
-    let panes: Vec<Vec<&str>> = out
-        .stdout
-        .lines()
-        .map(|l| l.split('\x1f').collect())
-        .collect();
-    let Some(root) = panes.first().map(|f| f[0]).filter(|r| !r.is_empty()) else {
+    let mut lines = out.stdout.lines();
+    let Some(root) = lines.next().filter(|r| !r.is_empty()) else {
         return false;
     };
     let mut text = format!("root\t{root}\n");
-    for f in panes.iter().filter(|f| f.len() >= 7) {
-        let command = pane_command(f[6]);
+    for f in lines.map(|l| l.splitn(6, tmux::SEP).collect::<Vec<_>>()) {
+        if f.len() < 6 {
+            continue;
+        }
+        let command = pane_command(f[4]);
         // A field holding a tab or newline would break the line, so they become spaces.
-        let fields: Vec<String> = [f[1], f[2], f[3], f[4], f[5], &command]
+        let fields: Vec<String> = [f[0], f[1], f[2], f[3], f[5], &command]
             .iter()
             .map(|s| s.replace(['\t', '\n'], " "))
             .collect();
@@ -129,7 +133,7 @@ pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<Restored> 
         let cwd = tmux_arg(if Path::new(f[4]).is_dir() { f[4] } else { root });
         let pane = "#{pane_id}";
         if i == 0 {
-            let format = "#{session_id}\x1f#{pane_id}";
+            let format = format!("#{{session_id}}{}#{{pane_id}}", tmux::SEP);
             call.extend(args([
                 "new-session",
                 "-d",
@@ -139,7 +143,7 @@ pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<Restored> 
                 &cwd,
                 "-P",
                 "-F",
-                format,
+                &format,
             ]));
         } else if panes[i - 1][0] == f[0] {
             // A split lands right after the newest pane, which keeps the saved order. Each
@@ -188,7 +192,7 @@ pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<Restored> 
     }
     let out = tmux::run(&call);
     let mut created = out.stdout.lines();
-    let (id, first) = created.next()?.split_once('\x1f')?;
+    let (id, first) = created.next()?.split_once(tmux::SEP)?;
     let ids: Vec<&str> = std::iter::once(first).chain(created).collect();
 
     // Only the panes tmux created before any failure get finished.

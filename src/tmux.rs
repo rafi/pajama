@@ -22,8 +22,11 @@ impl Out {
 }
 
 /// Runs one tmux call. Arguments that are a lone ";" chain commands into the same call.
+///
+/// Without -u, tmux 3.4 prints tabs and non-ASCII names as `_` unless the locale is UTF-8.
 pub fn run<S: AsRef<OsStr>>(args: &[S]) -> Out {
     match Command::new("tmux")
+        .arg("-u")
         .args(args)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -58,19 +61,22 @@ impl Session {
     }
 }
 
-const SEP: char = '\x1f';
+/// Separates the fields of every tmux format pj reads. tmux 3.4 and 3.5 print other control
+/// characters as octal escapes, and layout files cannot hold a tab either. A folder may
+/// still hold a tab, so a path is always the last field and is split off with splitn.
+pub const SEP: &str = "\t";
 
 /// Every session in one tmux call, so a command makes one more call at most, to act.
 pub fn snapshot() -> Vec<Session> {
     let format = [
         "#{session_id}",
-        "#{@pj_root}",
         "#{session_name}",
         "#{session_windows}",
         "#{window_name}",
         "#{session_activity}",
+        "#{@pj_root}",
     ]
-    .join("\x1f");
+    .join(SEP);
     let mut current = None;
     let mut text = None;
     // TMUX_PANE names the pane this shell runs in. Without it tmux would guess the most
@@ -99,21 +105,21 @@ pub fn snapshot() -> Vec<Session> {
     let text = text.unwrap_or_else(|| run(&["list-sessions", "-F", &format]).stdout);
     text.lines()
         .filter_map(|line| {
-            let f: Vec<&str> = line.split(SEP).collect();
+            let f: Vec<&str> = line.splitn(6, SEP).collect();
             if f.len() < 6 {
                 return None;
             }
             Some(Session {
                 id: f[0].to_owned(),
-                entry: if f[1].is_empty() {
-                    plain_name(f[2])
+                entry: if f[5].is_empty() {
+                    plain_name(f[1])
                 } else {
-                    f[1].to_owned()
+                    f[5].to_owned()
                 },
-                name: f[2].to_owned(),
-                windows: f[3].to_owned(),
-                window: f[4].to_owned(),
-                activity: f[5].parse().unwrap_or(0),
+                name: f[1].to_owned(),
+                windows: f[2].to_owned(),
+                window: f[3].to_owned(),
+                activity: f[4].parse().unwrap_or(0),
                 current: current.as_deref() == Some(f[0]),
             })
         })
