@@ -201,10 +201,11 @@ impl Fx {
         format!("{}:{}", shim.display(), self.path)
     }
 
-    fn calls(&self, file: &str, tool: &str) -> usize {
+    /// How many times each of TOOLS ran since FILE was last read, in order.
+    fn calls(&self, file: &str, tools: &[&str]) -> Vec<usize> {
         let calls = fs::read_to_string(self.p(file)).unwrap_or_default();
         let _ = fs::remove_file(self.p(file));
-        calls.lines().filter(|l| *l == tool).count()
+        tools.iter().map(|tool| calls.lines().filter(|l| l == tool).count()).collect()
     }
 }
 
@@ -282,7 +283,7 @@ fn stop_saves_and_closes_and_refuses_other_sessions() {
 }
 
 #[test]
-fn saving_records_programs_with_one_ps() {
+fn saving_records_programs_without_ps() {
     let fx = Fx::new();
     let root = fx.project("code/app");
     fs::create_dir_all(fx.p("config/pj/resume")).unwrap();
@@ -297,7 +298,7 @@ fn saving_records_programs_with_one_ps() {
     let path = fx.recording_path("calls");
     let out = fx.cmd(PJ).env("PATH", path).args(["save", "app"]).output().unwrap();
     assert!(out.status.success(), "{}", text(&out));
-    assert_eq!((fx.calls("calls", "ps"), fx.calls("calls", "pgrep")), (1, 0));
+    assert_eq!(fx.calls("calls", &["ps", "pgrep"]), [0, 0]);
 
     let lines = layout_lines(&fx.layout(&root));
     assert!(lines.iter().all(|f| f.len() == 6), "{lines:?}");
@@ -583,20 +584,20 @@ fn each_command_reads_tmux_once() {
     let rec = [("PATH", path.as_str())];
 
     fx.pj_tty(Some("p2"), &[rec[0], ("FAKE_FZF_STATUS", "130")], &[]);
-    assert_eq!(fx.calls("calls", "tmux"), 1, "picker");
+    assert_eq!(fx.calls("calls", &["tmux"]), [1], "picker");
     fx.pj_tty(Some("p2"), &rec, &[&p1]);
-    assert_eq!(fx.calls("calls", "tmux"), 2, "switch");
+    assert_eq!(fx.calls("calls", &["tmux"]), [2], "switch");
     fx.pj_tty(Some("p2"), &rec, &["-"]);
-    assert_eq!(fx.calls("calls", "tmux"), 2, "dash");
+    assert_eq!(fx.calls("calls", &["tmux"]), [2], "dash");
 
     let p3 = fx.project("code/p3");
     fx.cmd(PJ).env("PATH", &path).arg(&p3).output().unwrap();
-    assert_eq!(fx.calls("calls", "tmux"), 7, "new project from the 3 window default");
+    assert_eq!(fx.calls("calls", &["tmux"]), [7], "new project from the 3 window default");
 
     let n = fx.tmux(&["display", "-p", "-t", "=p3:", "#{session_id}"]).replace('$', "");
     fx.cmd(PJ).env("PATH", &path).args(["--hook", "detached", &n]).output().unwrap();
     fx.cmd(PJ).env("PATH", &path).args(["--hook", "visited", &n]).output().unwrap();
-    assert_eq!(fx.calls("calls", "tmux"), 2, "hooks");
+    assert_eq!(fx.calls("calls", &["tmux"]), [2], "hooks");
 }
 
 #[test]

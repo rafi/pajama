@@ -7,13 +7,14 @@ mod history;
 mod layout;
 mod paths;
 mod picker;
+mod process;
 mod text;
 mod tmux;
 
 use std::env;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{self, Command};
+use std::process::Command;
 
 use text::{basename, plain_name, tilde, tmux_arg};
 use tmux::Session;
@@ -29,7 +30,7 @@ fn fail(code: i32, message: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
-    process::exit(run(&args));
+    std::process::exit(run(&args));
 }
 
 fn run(args: &[String]) -> i32 {

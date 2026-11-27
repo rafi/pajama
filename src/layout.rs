@@ -9,6 +9,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::paths;
+use crate::process;
 use crate::text::tmux_arg;
 use crate::tmux;
 
@@ -33,11 +34,9 @@ pub fn save(id: &str) -> bool {
     let Some(root) = panes.first().map(|f| f[0]).filter(|r| !r.is_empty()) else {
         return false;
     };
-    // One process table serves every pane, instead of two processes per pane.
-    let processes = processes();
     let mut text = format!("root\t{root}\n");
     for f in panes.iter().filter(|f| f.len() >= 7) {
-        let command = pane_command(f[6], &processes);
+        let command = pane_command(f[6]);
         // A field holding a tab or newline would break the line, so they become spaces.
         let fields: Vec<String> = [f[1], f[2], f[3], f[4], f[5], &command]
             .iter()
@@ -49,52 +48,21 @@ pub fn save(id: &str) -> bool {
     paths::write_atomic(&paths::layout_file(root), &text).is_ok()
 }
 
-pub struct Process {
-    pid: String,
-    ppid: String,
-    args: String,
-}
-
-pub fn processes() -> Vec<Process> {
-    let Ok(out) = Command::new("ps")
-        .args(["-ww", "-A", "-o", "pid=,ppid=,args="])
-        .stderr(Stdio::null())
-        .output()
-    else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|line| {
-            let (pid, rest) = line.trim_start().split_once(char::is_whitespace)?;
-            let rest = rest.trim_start();
-            let (ppid, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
-            Some(Process {
-                pid: pid.to_owned(),
-                ppid: ppid.to_owned(),
-                args: args.trim_start().to_owned(),
-            })
-        })
-        .collect()
-}
-
 /// The command that brings back the program a pane's shell runs. An executable
 /// `resume/PROGRAM` in the config folder decides for that program, given its PID. Other
 /// programs come back with their full command line when the programs file lists them.
-pub fn pane_command(shell_pid: &str, processes: &[Process]) -> String {
-    // ps lists by pid, so the first match is the child the shell started first.
-    let Some(child) = processes.iter().find(|p| p.ppid == shell_pid) else {
+pub fn pane_command(shell_pid: &str) -> String {
+    let Some(child) = shell_pid.parse().ok().and_then(process::first_child) else {
         return String::new();
     };
-    let program = child.args.split(' ').next().unwrap_or("");
-    let program = program.rsplit('/').next().unwrap_or(program);
+    let program = child.args.first().map_or("", |a| a.rsplit('/').next().unwrap_or(a));
     let config = paths::config_dir();
     let resume = config.join("resume").join(program);
     if !program.is_empty()
         && fs::metadata(&resume).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     {
         return Command::new(&resume)
-            .arg(&child.pid)
+            .arg(child.pid.to_string())
             .stderr(Stdio::null())
             .output()
             .map(|out| String::from_utf8_lossy(&out.stdout).trim_end().to_owned())
@@ -105,7 +73,7 @@ pub fn pane_command(shell_pid: &str, processes: &[Process]) -> String {
             .map(str::trim)
             .any(|line| !line.starts_with('#') && line == program)
     });
-    if listed { child.args.clone() } else { String::new() }
+    if listed { child.args.join(" ") } else { String::new() }
 }
 
 fn args<const N: usize>(fixed: [&str; N]) -> Vec<String> {
