@@ -1,8 +1,8 @@
-# pj
+# pajama
 
-Open a tmux session per project, by path, folder name, fuzzy picker or history. Each
-project keeps its window and pane layout, and the programs you choose come back when it
-reopens.
+Slip into your projects. `pj` opens a tmux session per project, by path, folder name,
+fuzzy picker or history. Each project keeps its window and pane layout, and the programs
+you choose come back when it reopens.
 
 It has no dependencies beyond the standard library, and every command reads tmux once and
 acts in one more call.
