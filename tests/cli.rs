@@ -135,7 +135,16 @@ impl Fx {
     /// test server, so pj switches a client that is not there instead of attaching.
     fn pj_tty(&self, inside: Option<&str>, env: &[(&str, &str)], args: &[&str]) -> Output {
         let mut c = self.cmd("script");
-        c.args(["-q", "/dev/null", PJ]).args(args);
+        if cfg!(target_os = "macos") {
+            c.args(["-q", "/dev/null", PJ]).args(args);
+        } else {
+            // util-linux script runs one shell command line, not an argument list.
+            let line: Vec<String> = std::iter::once(PJ)
+                .chain(args.iter().copied())
+                .map(|a| format!("'{}'", a.replace('\'', r"'\''")))
+                .collect();
+            c.args(["-qec", &line.join(" "), "/dev/null"]);
+        }
         match inside {
             Some(session) => self.inside(&mut c, session),
             None => {
