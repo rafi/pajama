@@ -942,3 +942,41 @@ fn the_omp_example_resumes_the_conversation_it_holds() {
     assert_eq!(command("1"), format!("omp --resume '{file}'"));
     assert_eq!(command("2"), "omp -c");
 }
+
+#[test]
+fn bash_completes_commands_projects_folders_and_sessions() {
+    let fx = Fx::new();
+    let app = fx.project("code/my app");
+    // Projects come from pj, folders from the working directory, which holds only coffee/.
+    fx.project("cwd/coffee");
+    fx.pj(&[&app]);
+    let bin = Path::new(PJ).parent().unwrap().display().to_string();
+    let complete = |line: &str| {
+        let script = format!(
+            "source {}/completions/pj.bash\n\
+             COMP_LINE={line:?}; read -ra COMP_WORDS <<<\"$COMP_LINE\"\n\
+             [[ $COMP_LINE == *' ' ]] && COMP_WORDS+=('')\n\
+             COMP_CWORD=$((${{#COMP_WORDS[@]}} - 1))\n\
+             _pj; printf '%s\\n' \"${{COMPREPLY[@]}}\"",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let out = fx
+            .cmd("bash")
+            .env("PATH", format!("{bin}:{}", fx.path))
+            .current_dir(fx.p("cwd"))
+            .args(["--norc", "-c", &script])
+            .output()
+            .unwrap();
+        let mut words: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(String::from)
+            .collect();
+        words.sort();
+        words
+    };
+    assert_eq!(complete("pj s"), ["save", "stop"]);
+    assert_eq!(complete("pj my"), ["my app"]);
+    assert_eq!(complete("pj co"), ["coffee"]);
+    assert_eq!(complete("pj -"), ["-"]);
+    assert_eq!(complete("pj stop "), ["myapp"]);
+}

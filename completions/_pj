@@ -1,0 +1,21 @@
+#compdef pj
+# zsh completion for pj. Copy it to a folder on $fpath, before compinit runs.
+
+local -a commands projects sessions
+local ret=1
+if (( CURRENT == 2 )); then
+	commands=('save:Save a session layout' 'stop:Save the layout and close the session' '-:Previous project')
+	# pj prints NAME<TAB>PATH. _describe splits on the first unescaped colon, so colons in
+	# the name are escaped before the tab becomes the separator.
+	projects=(${(f)"$(command pj --complete projects)"})
+	projects=(${projects//:/\\:})
+	projects=(${projects/$'\t'/:})
+	_describe -t commands command commands && ret=0
+	_describe -t projects project projects && ret=0
+	_path_files -/ && ret=0
+elif (( CURRENT == 3 )) && [[ $words[2] == (save|stop) ]]; then
+	sessions=(${(f)"$(command pj --complete sessions)"})
+	sessions=(${sessions//:/\\:})
+	_describe -t sessions session sessions && ret=0
+fi
+return ret

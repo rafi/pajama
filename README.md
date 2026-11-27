@@ -11,7 +11,14 @@ acts in one more call.
 
 ```sh
 cargo install --path .
-cp completions/pj.fish ~/.config/fish/completions/
+```
+
+Completions, for the shell you use:
+
+```sh
+cp completions/pj.fish ~/.config/fish/completions/                 # fish
+cp completions/pj.bash ~/.local/share/bash-completion/completions/pj # bash
+cp completions/_pj ~/.zfunc/                                        # zsh, with ~/.zfunc on $fpath before compinit
 ```
 
 Needs tmux, and fzf 0.66 or newer for the picker.
