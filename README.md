@@ -4,6 +4,8 @@ Slip into your projects. `pj` opens a tmux session per project, by path, folder 
 fuzzy picker or history. Each project keeps its window and pane layout, and the programs
 you choose come back when it reopens.
 
+![pj opening a project from the picker, then going back with pj -](https://raw.githubusercontent.com/rafi/assets/main/repo/pajama/demo.gif)
+
 It has no dependencies beyond the standard library, and every command reads tmux once and
 acts in one more call.
 
@@ -45,7 +47,7 @@ An argument is a path when it contains `/`, is `.` or `..`, or starts with `~`. 
 after `save` and `stop` is a session name as `tmux ls` shows it.
 
 `pj NAME` matches project folder names and running session names. Only letters, digits,
-`.`, `_` and `-` count, so status marks that agent tools such as omp add to a session name
+`.`, `_` and `-` count, so status marks that agent tools might add to a session name
 are ignored: `main⏳` matches `main`.
 
 pj also switches to tmux sessions it did not create, such as one started with `tmux new`.
@@ -66,6 +68,8 @@ A stopped project is dimmed and shows the window count and age of its saved layo
 The preview shows the `wt list` table of the folder's worktrees when
 [worktrunk](https://worktrunk.dev) is installed, then the last 15 commits. `alt-p` hides
 it and `ctrl-u`/`ctrl-d` scroll it.
+
+![The picker with running, stopped and plain tmux sessions, and a project's commits](https://raw.githubusercontent.com/rafi/assets/main/repo/pajama/picker.png)
 
 ## Files
 
@@ -94,6 +98,12 @@ cargo test --release
 ```
 
 Every integration test runs its own tmux server with its own state and config folders.
+
+## Demo
+
+`just demo` records the GIF and the picker screenshot with
+[VHS](https://github.com/charmbracelet/vhs) against a throwaway sandbox with its own
+projects and tmux server, and copies them to `~/code/rafi/assets/repo/pajama`.
 
 ## License
 
