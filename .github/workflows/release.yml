@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          # Linux builds link musl statically, so they run on any distribution.
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, name: linux-amd64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, name: linux-arm64 }
+          - { os: macos-latest, target: x86_64-apple-darwin, name: darwin-amd64 }
+          - { os: macos-latest, target: aarch64-apple-darwin, name: darwin-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      # pj --version prints the Cargo.toml version, so a tag must match it.
+      - name: Check the tag matches the version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
+            exit 1
+          fi
+      - run: rustup update stable && rustup default stable && rustup target add ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          dir="pajama-$GITHUB_REF_NAME-${{ matrix.name }}"
+          mkdir -p "$dir/completions" "$dir/man"
+          cp "target/${{ matrix.target }}/release/pj" LICENSE README.md "$dir/"
+          cp completions/* "$dir/completions/"
+          cp man/pj.1 "$dir/man/"
+          tar -czf "$dir.tar.gz" "$dir"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}
+          path: pajama-*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+      - run: sha256sum pajama-*.tar.gz >SHA256SUMS
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" pajama-*.tar.gz SHA256SUMS --verify-tag --generate-notes

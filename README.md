@@ -11,6 +11,10 @@ acts in one more call.
 
 ## Install
 
+Download a build for Linux or macOS from the
+[releases](https://github.com/rafi/pajama/releases). Each archive holds `pj`, the man page
+and the completions. Or build it yourself:
+
 ```sh
 cargo install --path .
 ```
@@ -36,7 +40,7 @@ Needs tmux, and fzf 0.66 or newer for the picker.
 | Command | Does |
 |---|---|
 | `pj PATH` | Open the project at that directory, creating its session if needed. |
-| `pj NAME` | Open the project whose folder is named `NAME`. Opens picker if several projects match that name. |
+| `pj NAME` | Open the project whose folder is named `NAME`, or picker if several match. |
 | `pj` | Pick a project or session, most recent first. |
 | `pj -` | Go back to the previous project or session. |
 | `pj save [NAME]` | Save a session's layout, the current one by default. |
