@@ -271,6 +271,30 @@ impl Fx {
             .map(|tool| calls.lines().filter(|l| l == tool).count())
             .collect()
     }
+
+    /// A control-mode client stands in for a terminal attached to SESSION. It leaves after
+    /// a few seconds, or when the server goes.
+    fn attach_client(&self, session: &str) -> Child {
+        let client = self
+            .cmd("sh")
+            .args([
+                "-c",
+                &format!("sleep 5 | tmux -C attach-session -t ={session}:"),
+            ])
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        for _ in 0..30 {
+            if !self
+                .tmux(&["list-clients", "-t", &format!("={session}:")])
+                .is_empty()
+            {
+                break;
+            }
+            sleep(Duration::from_millis(100));
+        }
+        client
+    }
 }
 
 impl Drop for Fx {
@@ -475,7 +499,37 @@ fn a_window_layout_survives_save_and_restore() {
 }
 
 #[test]
-fn splits_that_do_not_fit_open_their_own_windows() {
+fn opening_from_inside_a_session_builds_only_the_new_one() {
+    let fx = Fx::new();
+    let here = fx.project("code/here");
+    let there = fx.project("code/there");
+    fx.pj(&[&here]);
+    fs::write(
+        fx.layout(&there),
+        format!("root\t{there}\n0\t\t1\t1\t\t\n0\t\t1\t0\t\t\n1\t\t0\t1\t\t\n"),
+    )
+    .unwrap();
+    let panes = |session: &str| {
+        fx.tmux(&["list-panes", "-s", "-t", &format!("={session}:")])
+            .lines()
+            .count()
+    };
+    let before = panes("here");
+    // A client in the session pj runs from makes it the current one for tmux.
+    let mut client = fx.attach_client("here");
+    fx.pj_in("here", &[&there]);
+    let _ = client.kill();
+    let _ = client.wait();
+    assert_eq!(
+        panes("here"),
+        before,
+        "the session pj ran from is untouched"
+    );
+    assert_eq!(panes("there"), 3);
+}
+
+#[test]
+fn splits_that_do_not_fit_leave_a_partial_session() {
     let fx = Fx::new();
     let root = fx.project("code/app");
     fx.tmux(&["new-session", "-d", "-s", "keep"]);
@@ -486,21 +540,23 @@ fn splits_that_do_not_fit_open_their_own_windows() {
     }
     file.push_str("1\t\t0\t1\t\tsleep 300\n");
     fs::write(fx.layout(&root), file).unwrap();
-    fx.pj(&[&root]);
-    assert_eq!(
-        fx.tmux(&["list-panes", "-s", "-t", "=app:"])
-            .lines()
-            .count(),
-        7
+    let out = fx.pj(&[&root]);
+    // The whole session is built in one tmux call, which stops at the split with no room.
+    assert!(
+        text(&out).contains("not every pane could be restored"),
+        "{}",
+        text(&out)
     );
-    assert!(fx.tmux(&["list-windows", "-t", "=app:"]).lines().count() > 2);
-    let last = fx
-        .tmux(&["list-windows", "-t", "=app:", "-F", "#{window_index}"])
+    let panes = fx
+        .tmux(&["list-panes", "-s", "-t", "=app:"])
         .lines()
-        .last()
-        .unwrap()
-        .to_owned();
-    assert!(fx.wait_child(&format!("=app:{last}")));
+        .count();
+    assert!((1..7).contains(&panes), "{panes} panes");
+    assert_eq!(
+        fx.root_of("app"),
+        root,
+        "the partial session is still a project"
+    );
 }
 
 #[test]
@@ -664,19 +720,7 @@ fn tmux_runs_the_hooks() {
     let root = fx.project("code/app");
     fx.pj(&[&root]);
     let _ = fs::remove_file(fx.p("state/pj/recent"));
-    // A control-mode client stands in for a terminal attached to the session.
-    let mut client: Child = fx
-        .cmd("sh")
-        .args(["-c", "sleep 5 | tmux -C attach-session -t =app:"])
-        .stdout(Stdio::null())
-        .spawn()
-        .unwrap();
-    for _ in 0..30 {
-        if !fx.tmux(&["list-clients", "-t", "=app:"]).is_empty() {
-            break;
-        }
-        sleep(Duration::from_millis(100));
-    }
+    let mut client = fx.attach_client("app");
     fx.tmux(&["detach-client", "-s", "=app:"]);
     let _ = client.wait();
     for _ in 0..30 {
@@ -756,9 +800,21 @@ fn each_command_reads_tmux_once() {
     fx.cmd(PJ).env("PATH", &path).arg(&p3).output().unwrap();
     assert_eq!(
         fx.calls("calls", &["tmux"]),
-        [7],
-        "new project from the 3 window default"
+        [4],
+        "new project outside tmux: read, build, finish, attach"
     );
+
+    // With a client in p2, the switch at the end of the finishing call succeeds.
+    let mut client = fx.attach_client("p2");
+    let p4 = fx.project("code/p4");
+    fx.pj_tty(Some("p2"), &rec, &[&p4]);
+    assert_eq!(
+        fx.calls("calls", &["tmux"]),
+        [3],
+        "new project inside tmux: read, build, finish with the switch"
+    );
+    let _ = client.kill();
+    let _ = client.wait();
 
     let n = fx
         .tmux(&["display", "-p", "-t", "=p3:", "#{session_id}"])

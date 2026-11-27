@@ -143,7 +143,7 @@ fn open_command(args: &[String]) -> i32 {
                     }
                 } else if matches.is_empty() {
                     // A session pj did not create has no project, so pj only switches to it.
-                    return attach(&s.id, &s.entry, &sessions);
+                    return attach(&s.id, &s.entry, &sessions, &[]);
                 }
             }
             let picked = match matches.len() {
@@ -164,7 +164,7 @@ fn go(target: &str, sessions: &[Session]) -> i32 {
     if target.starts_with('/') {
         open(target, sessions)
     } else if let Some(s) = tmux::find_entry(sessions, target) {
-        attach(&s.id, target, sessions)
+        attach(&s.id, target, sessions, &[])
     } else {
         fail(1, &format!("no session '{target}'"))
     }
@@ -173,7 +173,7 @@ fn go(target: &str, sessions: &[Session]) -> i32 {
 /// Goes to the session of project ROOT, restoring it from its saved layout if needed.
 fn open(root: &str, sessions: &[Session]) -> i32 {
     if let Some(s) = tmux::find_entry(sessions, root) {
-        return attach(&s.id, root, sessions);
+        return attach(&s.id, root, sessions, &[]);
     }
     if !Path::new(root).is_dir() {
         return fail(1, &format!("{root} no longer exists"));
@@ -200,64 +200,65 @@ fn open(root: &str, sessions: &[Session]) -> i32 {
         name = format!("{base}-{n}");
         n += 1;
     }
-    let Some(id) = layout::restore(&name, root, file.as_deref()) else {
+    let Some(restored) = layout::restore(&name, root, file.as_deref()) else {
         let shown = file.map(|f| f.display().to_string()).unwrap_or_default();
         return fail(1, &format!("no pane in {shown} could be restored"));
     };
-    tag(&id, root);
-    attach(&id, root, sessions)
+    if !restored.complete {
+        eprintln!("pj: not every pane could be restored");
+    }
+    let mut finish = tag(&restored.id, root);
+    finish.extend(restored.finish);
+    attach(&restored.id, root, sessions, &finish)
 }
 
-/// Marks session ID as the pj session of project ROOT and sets its hooks. The hooks name
-/// the session by the digits of its id, which survive quoting and a rename, and call this
-/// binary through a session option, which tmux quotes for the shell.
-fn tag(id: &str, root: &str) {
+/// The commands that mark session ID as the pj session of project ROOT and set its hooks.
+/// The hooks name the session by the digits of its id, which survive quoting and a rename,
+/// and call this binary through a session option, which tmux quotes for the shell.
+fn tag(id: &str, root: &str) -> Vec<String> {
     let n = id.trim_start_matches('$');
     let exe = env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "pj".into());
     let hook = |event: &str| format!("run-shell -b \"#{{q:@pj_bin}} --hook {event} {n}\"");
-    tmux::run(&[
-        "set-option",
-        "-t",
-        id,
-        "@pj_root",
-        &tmux_arg(root),
-        ";",
-        "set-option",
-        "-t",
-        id,
-        "@pj_bin",
-        &tmux_arg(&exe),
-        ";",
-        "set-hook",
-        "-t",
-        id,
-        "client-detached",
-        &hook("detached"),
-        ";",
-        "set-hook",
-        "-t",
-        id,
-        "client-session-changed",
-        &hook("visited"),
-    ]);
+    #[rustfmt::skip]
+    let call = [
+        "set-option", "-t", id, "@pj_root", &tmux_arg(root), ";",
+        "set-option", "-t", id, "@pj_bin", &tmux_arg(&exe), ";",
+        "set-hook", "-t", id, "client-detached", &hook("detached"), ";",
+        "set-hook", "-t", id, "client-session-changed", &hook("visited"),
+    ];
+    call.iter().map(|s| s.to_string()).collect()
 }
 
-/// Goes to session ID. The session the client leaves goes into history under the one it
-/// goes to, so `pj -` can return to it. Both entries come from the snapshot, so the switch
-/// is the only tmux call.
-fn attach(id: &str, entry: &str, sessions: &[Session]) -> i32 {
+/// Goes to session ID, first running the tmux commands in BEFORE in the same call. The
+/// session the client leaves goes into history under the one it goes to, so `pj -` can
+/// return to it. Both entries come from the snapshot, so tmux sees one call.
+fn attach(id: &str, entry: &str, sessions: &[Session], before: &[String]) -> i32 {
     match tmux::current(sessions) {
         Some(current) if current.id != id => history::add(&[&current.entry, entry]),
         _ => history::add(&[entry]),
     }
-    if env::var_os("TMUX").is_some() {
+    let switch = || {
         Command::new("tmux")
             .args(["switch-client", "-t", id])
             .status()
             .map_or(1, |s| s.code().unwrap_or(1))
+    };
+    if env::var_os("TMUX").is_some() {
+        if before.is_empty() {
+            return switch();
+        }
+        // A failed command ends a tmux call, and BEFORE may end in a stale layout, so the
+        // switch gets its own call when the shared one fails.
+        let mut call = before.to_vec();
+        call.extend([";", "switch-client", "-t", id].map(String::from));
+        if tmux::run(&call).ok { 0 } else { switch() }
     } else {
+        // Commands after attach-session in one call never run, so attaching comes last.
+        if !before.is_empty() {
+            tmux::run(before);
+        }
         let err = Command::new("tmux")
             .args(["attach-session", "-t", id])
             .exec();

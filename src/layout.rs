@@ -91,13 +91,24 @@ fn args<const N: usize>(fixed: [&str; N]) -> Vec<String> {
     fixed.iter().map(|s| s.to_string()).collect()
 }
 
-/// Creates detached session NAME for project ROOT from layout FILE, or one shell without
-/// it, and returns the session id.
+/// A session [`restore`] built, and the commands that finish it.
+pub struct Restored {
+    pub id: String,
+    /// Selects the saved active panes and window, then applies the saved layouts. Each command
+    /// starts with the `;` that chains it, so callers append them to their next tmux call.
+    /// A stale layout fails, which ends a tmux call, so layouts come last.
+    pub finish: Vec<String>,
+    /// False when tmux stopped partway, for example at a split with no room left.
+    pub complete: bool,
+}
+
+/// Creates detached session NAME for project ROOT from layout FILE, or one shell without it.
 ///
-/// Commands that follow split-window or new-window in one tmux call go to the new pane,
-/// so each pane takes one call. A failed command ends its call, so commands that can fail,
-/// like a stale layout string, come last.
-pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<String> {
+/// The whole session takes one tmux call. Every command in it names the new session, since
+/// inside tmux the current session is the one pj runs from. Splits and new windows are not
+/// detached, so the session's active pane is always the newest one. Each create prints the
+/// id of its pane.
+pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<Restored> {
     let lines: Vec<String> = match file {
         Some(file) => fs::read_to_string(file)
             .ok()?
@@ -107,147 +118,108 @@ pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<String> {
             .collect(),
         None => vec!["0\t\t1\t1\t\t".into()],
     };
-    let mut session = String::new();
-    let mut index: Option<String> = None; // window index of the previous line
-    let mut layout = String::new(); // saved layout of the window being built
-    let mut last = String::new(); // newest pane of that window
-    let mut focus: Option<String> = None; // pane of that window to select once it is complete
-    let mut active: Option<String> = None; // a pane in the window to select at the end
-    for line in &lines {
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() != 6 {
-            continue;
-        }
+    let panes: Vec<Vec<&str>> = lines
+        .iter()
+        .map(|l| l.split('\t').collect::<Vec<_>>())
+        .filter(|f| f.len() == 6)
+        .collect();
+    let target = format!("={name}:");
+    let mut call = Vec::new();
+    for (i, f) in panes.iter().enumerate() {
         let cwd = tmux_arg(if Path::new(f[4]).is_dir() { f[4] } else { root });
-        // Typing the command keeps the pane open after the program exits. A new session is
-        // not the current target, so its keys name it.
-        let mut keys = Vec::new();
-        if !f[5].is_empty() {
-            let to = if index.is_none() {
-                vec!["-t".to_owned(), format!("={name}:")]
-            } else {
-                vec![]
-            };
-            keys.extend([";".to_owned(), "send-keys".to_owned()]);
-            keys.extend(to.clone());
-            keys.extend(["-l".to_owned(), "--".to_owned(), tmux_arg(f[5])]);
-            keys.extend([";".to_owned(), "send-keys".to_owned()]);
-            keys.extend(to);
-            keys.push("Enter".to_owned());
-        }
-        let pane;
-        if index.as_deref() == Some(f[0]) {
-            // A split lands right after its target, so splitting the newest pane keeps the
-            // saved order. Each split halves a pane, so the window is rebalanced before it
-            // runs out of room.
-            let mut call = args([
-                "split-window",
-                "-t",
-                &last,
+        let pane = "#{pane_id}";
+        if i == 0 {
+            let format = "#{session_id}\x1f#{pane_id}";
+            call.extend(args([
+                "new-session",
+                "-d",
+                "-s",
+                name,
                 "-c",
                 &cwd,
                 "-P",
                 "-F",
-                "#{pane_id}",
+                format,
+            ]));
+        } else if panes[i - 1][0] == f[0] {
+            // A split lands right after the newest pane, which keeps the saved order. Each
+            // split halves a pane, so the window is rebalanced before it runs out of room.
+            call.extend(args([
                 ";",
-                "select-layout",
-                "tiled",
-            ]);
-            call.extend(keys);
-            pane = match tmux::run(&call).first_line() {
-                Some(p) => {
-                    last = p.clone();
-                    Some(p)
-                }
-                // With no room left, an empty pane in its own window keeps later commands in place.
-                None => tmux::run(&[
-                    "new-window",
-                    "-d",
-                    "-t",
-                    &format!("{session}:"),
-                    "-c",
-                    &cwd,
-                    "-P",
-                    "-F",
-                    "#{pane_id}",
-                ])
-                .first_line(),
-            };
+                "split-window",
+                "-t",
+                &target,
+                "-c",
+                &cwd,
+                "-P",
+                "-F",
+                pane,
+            ]));
+            call.extend(args([";", "select-layout", "-t", &target, "tiled"]));
         } else {
-            // The window before this one is complete, so its active pane and layout apply now.
-            let mut done = Vec::new();
-            if let Some(p) = &focus {
-                done.extend(args([";", "select-pane", "-t", p]));
-            }
-            if !layout.is_empty() {
-                done.extend(args([";", "select-layout", "-t", &last, &layout]));
-            }
-            if index.is_none() {
-                let mut call = args([
-                    "new-session",
-                    "-d",
-                    "-s",
-                    name,
-                    "-c",
-                    &cwd,
-                    "-P",
-                    "-F",
-                    "#{session_id}\x1f#{pane_id}",
-                ]);
-                call.extend(keys);
-                let out = tmux::run(&call);
-                let (id, p) = out
-                    .first_line()?
-                    .split_once('\x1f')
-                    .map(|(a, b)| (a.to_owned(), b.to_owned()))?;
-                if !out.ok {
-                    return None;
-                }
-                session = id;
-                pane = Some(p);
-            } else {
-                let mut call = args([
-                    "new-window",
-                    "-t",
-                    &format!("{session}:"),
-                    "-c",
-                    &cwd,
-                    "-P",
-                    "-F",
-                    "#{pane_id}",
-                ]);
-                call.extend(keys);
-                call.extend(done);
-                pane = tmux::run(&call).first_line();
-            }
-            index = Some(f[0].to_owned());
-            layout = f[1].to_owned();
-            last = pane.clone().unwrap_or_default();
-            focus = None;
+            call.extend(args([
+                ";",
+                "new-window",
+                "-t",
+                &target,
+                "-c",
+                &cwd,
+                "-P",
+                "-F",
+                pane,
+            ]));
         }
-        let Some(pane) = pane else { continue };
-        if f[2] == "1" {
-            active = Some(pane.clone());
-        }
-        if f[3] == "1" && pane == last {
-            focus = Some(pane);
+        // Typing the command keeps the pane open after the program exits.
+        if !f[5].is_empty() {
+            call.extend(args([
+                ";",
+                "send-keys",
+                "-t",
+                &target,
+                "-l",
+                "--",
+                &tmux_arg(f[5]),
+            ]));
+            call.extend(args([";", "send-keys", "-t", &target, "Enter"]));
         }
     }
-    if session.is_empty() {
+    if call.is_empty() {
         return None;
     }
-    let mut done = Vec::new();
-    if let Some(p) = &focus {
-        done.extend(args([";", "select-pane", "-t", p]));
+    let out = tmux::run(&call);
+    let mut created = out.stdout.lines();
+    let (id, first) = created.next()?.split_once('\x1f')?;
+    let ids: Vec<&str> = std::iter::once(first).chain(created).collect();
+
+    // Only the panes tmux created before any failure get finished.
+    let mut focus = Vec::new();
+    let mut active = None;
+    let mut layouts = Vec::new();
+    for (i, (f, &pane)) in panes.iter().zip(&ids).enumerate() {
+        if f[2] == "1" {
+            active = Some(pane);
+        }
+        if f[3] == "1" {
+            focus.push(pane);
+        }
+        let window_ends = i + 1 == ids.len() || panes[i + 1][0] != f[0];
+        if window_ends && !f[1].is_empty() {
+            layouts.push((pane, f[1]));
+        }
     }
-    if let Some(p) = &active {
-        done.extend(args([";", "select-window", "-t", p]));
+    let mut finish = Vec::new();
+    for pane in focus {
+        finish.extend(args([";", "select-pane", "-t", pane]));
     }
-    if !layout.is_empty() {
-        done.extend(args([";", "select-layout", "-t", &last, &layout]));
+    if let Some(pane) = active {
+        finish.extend(args([";", "select-window", "-t", pane]));
     }
-    if !done.is_empty() {
-        tmux::run(&done[1..]);
+    for (pane, layout) in layouts {
+        finish.extend(args([";", "select-layout", "-t", pane, layout]));
     }
-    Some(session)
+    Some(Restored {
+        id: id.to_owned(),
+        finish,
+        complete: out.ok,
+    })
 }
