@@ -1,0 +1,13 @@
+[package]
+name = "pj"
+version = "0.1.0"
+edition = "2024"
+description = "Open tmux project sessions by path, name, picker or history"
+publish = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
