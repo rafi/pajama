@@ -88,3 +88,7 @@ cargo test --release
 ```
 
 Every integration test runs its own tmux server with its own state and config folders.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
