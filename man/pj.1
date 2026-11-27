@@ -49,16 +49,32 @@ or starts with
 .BI pj " NAME"
 Open the project whose folder is named
 .IR NAME .
-Running session names match too, ignoring the marks agent tools append, so
+If several projects match that name, the picker opens.
+.IP
+.I NAME
+matches project folder names and running session names.
+Only letters, digits,
+.BR . ,
+.B _
+and
+.B \-
+count, so status marks that agent tools such as omp add to a session name are
+ignored:
 .B main\[u23F3]
 matches
 .BR main .
-A session
+.IP
 .B pj
-did not create matches only when no project does.
-With several matches or none, the picker opens with
-.I NAME
-typed in.
+also switches to tmux sessions it did not create, such as one started with
+.BR "tmux new" .
+When such a session has the same name as a project,
+.BI pj " NAME"
+opens the project.
+.B pj
+never saves the layout of these sessions, because they have no project folder, but
+.B pj \-
+goes back to one you left with
+.BR pj .
 .TP
 .B pj
 Pick a project or session with fzf, most recent first.
@@ -84,6 +100,8 @@ Print the package name and version.
 .BR \-h ", " \-\-help
 Print usage.
 .SH PICKER
+A table of your projects and running sessions, most recent first, with columns for the
+name, the window count, the active window, the time since last use, and the path.
 .B \[u25B8]
 marks the session you are in,
 .B \[u25CF]
@@ -92,38 +110,36 @@ a running project, and
 a session
 .B pj
 did not create.
-A stopped project shows its saved window count and the age of its layout.
+A stopped project is dimmed and shows the window count and age of its saved layout.
 .PP
-The preview shows the worktrunk
+The preview shows the
 .B wt list
 table of the folder's worktrees when
 .B wt
-is installed, then the last 15 commits.
+(worktrunk) is installed, then the last 15 commits.
 .B alt\-p
 hides the preview, and
 .B ctrl\-u
 and
 .B ctrl\-d
 scroll it.
-.SH BRINGING PROGRAMS BACK
+.SH RESTORING RUNNING PROGRAMS
 When
 .B pj
-saves a pane, it looks at the program the pane's shell runs.
+saves a session, it looks at the program running in each pane, and decides whether to
+start it again when the session comes back:
 .IP \(bu 2
-The
-.B programs
-file lists program names, one per line, with
+.I $XDG_CONFIG_HOME/pj/programs
+lists program names, one per line, with
 .B #
-starting a comment.
-A listed program comes back with its full command line.
+for comments.
+A listed program is started again with its full command line.
 .IP \(bu 2
 An executable
-.BI resume/ NAME
-decides for program
-.IR NAME ,
-listed or not.
-It gets the program's PID as its argument and prints the command to type when the
-session comes back, or nothing for a plain shell.
+.IB $XDG_CONFIG_HOME /pj/resume/ NAME
+gets the PID of program
+.I NAME
+and prints the command to run instead.
 .SH FILES
 .TP
 .IB $XDG_STATE_HOME /pj/ PATH .tsv

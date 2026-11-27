@@ -16,9 +16,9 @@ cargo install --path .
 Completions, for the shell you use:
 
 ```sh
-cp completions/pj.fish ~/.config/fish/completions/                 # fish
+cp completions/pj.fish ~/.config/fish/completions/   # fish
 cp completions/pj.bash ~/.local/share/bash-completion/completions/pj # bash
-cp completions/_pj ~/.zfunc/                                        # zsh, with ~/.zfunc on $fpath before compinit
+cp completions/_pj ~/.zfunc/                         # zsh, with ~/.zfunc on $fpath before compinit
 ```
 
 The man page:
@@ -34,7 +34,7 @@ Needs tmux, and fzf 0.66 or newer for the picker.
 | Command | Does |
 |---|---|
 | `pj PATH` | Open the project at that directory, creating its session if needed. |
-| `pj NAME` | Open the project whose folder is named `NAME`. Several or none: pick with fzf, `NAME` typed in. |
+| `pj NAME` | Open the project whose folder is named `NAME`. Opens picker if several projects match that name. |
 | `pj` | Pick a project or session, most recent first. |
 | `pj -` | Go back to the previous project or session. |
 | `pj save [NAME]` | Save a session's layout, the current one by default. |
@@ -44,21 +44,28 @@ Needs tmux, and fzf 0.66 or newer for the picker.
 An argument is a path when it contains `/`, is `.` or `..`, or starts with `~`. `NAME`
 after `save` and `stop` is a session name as `tmux ls` shows it.
 
-`pj NAME` matches project folder names and running session names, ignoring the marks agent
-tools append (`main⏳` matches `main`). A session pj did not create matches only when no
-project does. pj never saves such a session, but `pj -` returns to one you left with pj.
+`pj NAME` matches project folder names and running session names. Only letters, digits,
+`.`, `_` and `-` count, so status marks that agent tools such as omp add to a session name
+are ignored: `main⏳` matches `main`.
+
+pj also switches to tmux sessions it did not create, such as one started with `tmux new`.
+When such a session has the same name as a project, `pj NAME` opens the project. pj never
+saves the layout of these sessions, because they have no project folder, but `pj -` goes
+back to one you left with pj.
 
 Inside tmux pj switches the client, outside it attaches. Layouts are saved when you
 detach, and on `pj save` and `pj stop`.
 
 ### The picker
 
-The layout of `wt switch` from [worktrunk](https://worktrunk.dev). `▸` marks the session
-you are in, `●` a running project, and `◇` a session pj did not create, dimmed. A
-stopped project shows its saved window count and the age of its layout, dimmed.
+A table of your projects and running sessions, most recent first, with columns for the
+name, the window count, the active window, the time since last use, and the path. `▸`
+marks the session you are in, `●` a running project, and `◇` a session pj did not create.
+A stopped project is dimmed and shows the window count and age of its saved layout.
 
-The preview shows the `wt list` table of the folder's worktrees when worktrunk is
-installed, then the last 15 commits. `alt-p` hides it and `ctrl-u`/`ctrl-d` scroll it.
+The preview shows the `wt list` table of the folder's worktrees when
+[worktrunk](https://worktrunk.dev) is installed, then the last 15 commits. `alt-p` hides
+it and `ctrl-u`/`ctrl-d` scroll it.
 
 ## Files
 
@@ -70,16 +77,15 @@ installed, then the last 15 commits. `alt-p` hides it and `ctrl-u`/`ctrl-d` scro
 | Programs to rerun | `$XDG_CONFIG_HOME/pj/programs` |
 | Resume scripts | `$XDG_CONFIG_HOME/pj/resume/<program>` |
 
-## Bringing programs back
+## Restoring running programs
 
-When pj saves a pane, it looks at the program the pane's shell runs.
+When pj saves a session, it looks at the program running in each pane, and decides
+whether to start it again when the session comes back:
 
-- `programs` lists program names, one per line, `#` for comments. A listed program comes
-  back with its full command line.
-- An executable `resume/NAME` decides for program `NAME`, listed or not. It gets the
-  program's PID and prints the command to type when the session comes back, or nothing
-  for a plain shell. [examples/resume/omp](examples/resume/omp) resumes the conversation
-  an omp agent has open.
+- `$XDG_CONFIG_HOME/pj/programs` lists program names, one per line, with `#` for
+  comments. A listed program is started again with its full command line.
+- An executable `$XDG_CONFIG_HOME/pj/resume/NAME` gets the PID of program `NAME` and
+  prints the command to run instead. See [examples/resume/omp](examples/resume/omp).
 
 ## Tests
 
