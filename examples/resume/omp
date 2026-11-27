@@ -3,8 +3,18 @@
 # types what it prints into the pane when the session comes back.
 # omp resumes the conversation file it holds open. Subagent files sit one directory deeper.
 sessions="$HOME/.omp/agent/sessions"
+# Linux lists open files under /proc, where lsof is often not installed.
+open_files() {
+	if [ -d "/proc/$1/fd" ]; then
+		for fd in "/proc/$1/fd"/*; do
+			readlink "$fd"
+		done 2>/dev/null
+	else
+		lsof -Fn -p "$1" 2>/dev/null | sed -n 's/^n//p'
+	fi
+}
 # The ( before each case pattern keeps older shells from ending the $( ) early.
-file=$(lsof -Fn -p "$1" 2>/dev/null | sed -n 's/^n//p' | while IFS= read -r path; do
+file=$(open_files "$1" | while IFS= read -r path; do
 	case $path in
 	("$sessions"/*/*/*) ;;
 	("$sessions"/*/*.jsonl)
