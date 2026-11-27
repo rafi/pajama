@@ -21,7 +21,8 @@ use tmux::Session;
 
 const USAGE: &str = "usage: pj [PATH|NAME|-]
        pj save [NAME]
-       pj stop [NAME]";
+       pj stop [NAME]
+       pj --version";
 
 fn fail(code: i32, message: &str) -> i32 {
     eprintln!("pj: {message}");
@@ -38,6 +39,10 @@ fn run(args: &[String]) -> i32 {
         Some("save" | "stop") => save_or_stop(args),
         Some("-h" | "--help") => {
             println!("{USAGE}");
+            0
+        }
+        Some("--version") => {
+            println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
             0
         }
         // Internal commands for tmux hooks, the picker and completions. Their names start

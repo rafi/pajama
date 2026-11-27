@@ -26,6 +26,7 @@ Needs tmux, and fzf 0.66 or newer for the picker.
 | `pj -` | Go back to the previous project or session. |
 | `pj save [NAME]` | Save a session's layout, the current one by default. |
 | `pj stop [NAME]` | Save the layout and close the session. |
+| `pj --version` | Print the version. |
 
 An argument is a path when it contains `/`, is `.` or `..`, or starts with `~`. `NAME`
 after `save` and `stop` is a session name as `tmux ls` shows it.

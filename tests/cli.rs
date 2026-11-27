@@ -352,6 +352,18 @@ fn a_renamed_session_is_found_by_its_folder() {
 }
 
 #[test]
+fn version_prints_the_package_version() {
+    let fx = Fx::new();
+    let out = fx.pj(&["--version"]);
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("{} {}\n", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    );
+    assert!(fx.sessions().is_empty(), "no tmux call");
+}
+
+#[test]
 fn bad_arguments_are_refused() {
     let fx = Fx::new();
     assert_eq!(fx.pj(&[&fx.s("nope/")]).status.code(), Some(1));
