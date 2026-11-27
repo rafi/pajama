@@ -13,7 +13,11 @@ pub struct Out {
 
 impl Out {
     pub fn first_line(&self) -> Option<String> {
-        self.stdout.lines().next().filter(|l| !l.is_empty()).map(String::from)
+        self.stdout
+            .lines()
+            .next()
+            .filter(|l| !l.is_empty())
+            .map(String::from)
     }
 }
 
@@ -74,7 +78,17 @@ pub fn snapshot() -> Vec<Session> {
     if env::var_os("TMUX").is_some()
         && let Ok(pane) = env::var("TMUX_PANE")
     {
-        let out = run(&["display", "-p", "-t", &pane, "#{session_id}", ";", "list-sessions", "-F", &format]);
+        let out = run(&[
+            "display",
+            "-p",
+            "-t",
+            &pane,
+            "#{session_id}",
+            ";",
+            "list-sessions",
+            "-F",
+            &format,
+        ]);
         if out.ok
             && let Some((first, rest)) = out.stdout.split_once('\n')
         {
@@ -91,7 +105,11 @@ pub fn snapshot() -> Vec<Session> {
             }
             Some(Session {
                 id: f[0].to_owned(),
-                entry: if f[1].is_empty() { plain_name(f[2]) } else { f[1].to_owned() },
+                entry: if f[1].is_empty() {
+                    plain_name(f[2])
+                } else {
+                    f[1].to_owned()
+                },
                 name: f[2].to_owned(),
                 windows: f[3].to_owned(),
                 window: f[4].to_owned(),

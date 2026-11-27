@@ -31,7 +31,8 @@ mod macos {
     const KERN_PROCARGS2: c_int = 49;
 
     unsafe extern "C" {
-        fn proc_listpids(kind: u32, typeinfo: u32, buffer: *mut c_void, buffersize: c_int) -> c_int;
+        fn proc_listpids(kind: u32, typeinfo: u32, buffer: *mut c_void, buffersize: c_int)
+        -> c_int;
         fn sysctl(
             name: *mut c_int,
             namelen: u32,
@@ -47,7 +48,8 @@ mod macos {
         loop {
             let size = (pids.len() * size_of::<i32>()) as c_int;
             // SAFETY: the buffer holds `size` bytes, and the call writes at most that many.
-            let used = unsafe { proc_listpids(PROC_PPID_ONLY, pid, pids.as_mut_ptr().cast(), size) };
+            let used =
+                unsafe { proc_listpids(PROC_PPID_ONLY, pid, pids.as_mut_ptr().cast(), size) };
             if used < 0 {
                 return Vec::new();
             }
@@ -58,21 +60,42 @@ mod macos {
             }
             pids.resize(pids.len() * 2, 0);
         }
-        pids.into_iter().filter(|&p| p > 0).map(|p| p as u32).collect()
+        pids.into_iter()
+            .filter(|&p| p > 0)
+            .map(|p| p as u32)
+            .collect()
     }
 
     pub fn args(pid: u32) -> Option<Vec<String>> {
         let mut mib = [CTL_KERN, KERN_PROCARGS2, pid as c_int];
         let mut size = 0usize;
         // SAFETY: with no buffer, sysctl only writes the size it needs into `size`.
-        let sized = unsafe { sysctl(mib.as_mut_ptr(), 3, ptr::null_mut(), &mut size, ptr::null_mut(), 0) };
+        let sized = unsafe {
+            sysctl(
+                mib.as_mut_ptr(),
+                3,
+                ptr::null_mut(),
+                &mut size,
+                ptr::null_mut(),
+                0,
+            )
+        };
         if sized != 0 {
             return None;
         }
         let mut buf = vec![0u8; size];
         // SAFETY: the buffer holds `size` bytes, and sysctl writes at most that many and
         // stores how many it wrote back into `size`.
-        let read = unsafe { sysctl(mib.as_mut_ptr(), 3, buf.as_mut_ptr().cast(), &mut size, ptr::null_mut(), 0) };
+        let read = unsafe {
+            sysctl(
+                mib.as_mut_ptr(),
+                3,
+                buf.as_mut_ptr().cast(),
+                &mut size,
+                ptr::null_mut(),
+                0,
+            )
+        };
         if read != 0 {
             return None;
         }
@@ -103,7 +126,10 @@ mod procfs {
     pub fn children(pid: u32) -> Vec<u32> {
         // Kernels built with CONFIG_PROC_CHILDREN list a thread's children directly.
         if let Ok(text) = fs::read_to_string(format!("/proc/{pid}/task/{pid}/children")) {
-            return text.split_whitespace().filter_map(|p| p.parse().ok()).collect();
+            return text
+                .split_whitespace()
+                .filter_map(|p| p.parse().ok())
+                .collect();
         }
         let Ok(dir) = fs::read_dir("/proc") else {
             return Vec::new();
@@ -120,7 +146,12 @@ mod procfs {
     /// The parent pid in /proc/PID/stat. It is the second field after the program name,
     /// which sits in parentheses and may itself hold spaces and parentheses.
     pub fn parent(stat: &str) -> Option<u32> {
-        stat.rsplit_once(')')?.1.split_whitespace().nth(1)?.parse().ok()
+        stat.rsplit_once(')')?
+            .1
+            .split_whitespace()
+            .nth(1)?
+            .parse()
+            .ok()
     }
 
     pub fn args(pid: u32) -> Option<Vec<String>> {
@@ -130,7 +161,11 @@ mod procfs {
     /// /proc/PID/cmdline ends each argument with a NUL, and is empty for a zombie.
     pub fn split_cmdline(raw: &[u8]) -> Option<Vec<String>> {
         let raw = raw.strip_suffix(&[0])?;
-        Some(raw.split(|&b| b == 0).map(|a| String::from_utf8_lossy(a).into_owned()).collect())
+        Some(
+            raw.split(|&b| b == 0)
+                .map(|a| String::from_utf8_lossy(a).into_owned())
+                .collect(),
+        )
     }
 }
 
@@ -145,7 +180,10 @@ mod tests {
 
     #[test]
     fn cmdline_keeps_empty_arguments_and_skips_zombies() {
-        assert_eq!(procfs::split_cmdline(b"sleep\0\x00300\0"), Some(vec!["sleep".into(), "".into(), "300".into()]));
+        assert_eq!(
+            procfs::split_cmdline(b"sleep\0\x00300\0"),
+            Some(vec!["sleep".into(), "".into(), "300".into()])
+        );
         assert_eq!(procfs::split_cmdline(b""), None);
     }
 
@@ -154,15 +192,24 @@ mod tests {
     fn procargs_skip_the_executable_path_and_padding() {
         let mut buf = 2i32.to_ne_bytes().to_vec();
         buf.extend(b"/bin/sleep\0\0\0\0sleep\x00300\0HOME=/x\0");
-        assert_eq!(super::macos::parse_procargs(&buf), Some(vec!["sleep".into(), "300".into()]));
+        assert_eq!(
+            super::macos::parse_procargs(&buf),
+            Some(vec!["sleep".into(), "300".into()])
+        );
     }
 
     #[test]
     fn a_spawned_child_is_found_with_its_arguments() {
-        let mut child = std::process::Command::new("sleep").arg("5").spawn().unwrap();
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
         let found = super::first_child(std::process::id()).map(|p| (p.pid, p.args));
         child.kill().unwrap();
         child.wait().unwrap();
-        assert_eq!(found, Some((child.id(), vec!["sleep".to_owned(), "5".to_owned()])));
+        assert_eq!(
+            found,
+            Some((child.id(), vec!["sleep".to_owned(), "5".to_owned()]))
+        );
     }
 }

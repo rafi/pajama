@@ -30,7 +30,11 @@ pub fn save(id: &str) -> bool {
     if !out.ok {
         return false;
     }
-    let panes: Vec<Vec<&str>> = out.stdout.lines().map(|l| l.split('\x1f').collect()).collect();
+    let panes: Vec<Vec<&str>> = out
+        .stdout
+        .lines()
+        .map(|l| l.split('\x1f').collect())
+        .collect();
     let Some(root) = panes.first().map(|f| f[0]).filter(|r| !r.is_empty()) else {
         return false;
     };
@@ -55,7 +59,10 @@ pub fn pane_command(shell_pid: &str) -> String {
     let Some(child) = shell_pid.parse().ok().and_then(process::first_child) else {
         return String::new();
     };
-    let program = child.args.first().map_or("", |a| a.rsplit('/').next().unwrap_or(a));
+    let program = child
+        .args
+        .first()
+        .map_or("", |a| a.rsplit('/').next().unwrap_or(a));
     let config = paths::config_dir();
     let resume = config.join("resume").join(program);
     if !program.is_empty()
@@ -73,7 +80,11 @@ pub fn pane_command(shell_pid: &str) -> String {
             .map(str::trim)
             .any(|line| !line.starts_with('#') && line == program)
     });
-    if listed { child.args.join(" ") } else { String::new() }
+    if listed {
+        child.args.join(" ")
+    } else {
+        String::new()
+    }
 }
 
 fn args<const N: usize>(fixed: [&str; N]) -> Vec<String> {
@@ -112,7 +123,11 @@ pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<String> {
         // not the current target, so its keys name it.
         let mut keys = Vec::new();
         if !f[5].is_empty() {
-            let to = if index.is_none() { vec!["-t".to_owned(), format!("={name}:")] } else { vec![] };
+            let to = if index.is_none() {
+                vec!["-t".to_owned(), format!("={name}:")]
+            } else {
+                vec![]
+            };
             keys.extend([";".to_owned(), "send-keys".to_owned()]);
             keys.extend(to.clone());
             keys.extend(["-l".to_owned(), "--".to_owned(), tmux_arg(f[5])]);
@@ -125,7 +140,19 @@ pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<String> {
             // A split lands right after its target, so splitting the newest pane keeps the
             // saved order. Each split halves a pane, so the window is rebalanced before it
             // runs out of room.
-            let mut call = args(["split-window", "-t", &last, "-c", &cwd, "-P", "-F", "#{pane_id}", ";", "select-layout", "tiled"]);
+            let mut call = args([
+                "split-window",
+                "-t",
+                &last,
+                "-c",
+                &cwd,
+                "-P",
+                "-F",
+                "#{pane_id}",
+                ";",
+                "select-layout",
+                "tiled",
+            ]);
             call.extend(keys);
             pane = match tmux::run(&call).first_line() {
                 Some(p) => {
@@ -133,8 +160,18 @@ pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<String> {
                     Some(p)
                 }
                 // With no room left, an empty pane in its own window keeps later commands in place.
-                None => tmux::run(&["new-window", "-d", "-t", &format!("{session}:"), "-c", &cwd, "-P", "-F", "#{pane_id}"])
-                    .first_line(),
+                None => tmux::run(&[
+                    "new-window",
+                    "-d",
+                    "-t",
+                    &format!("{session}:"),
+                    "-c",
+                    &cwd,
+                    "-P",
+                    "-F",
+                    "#{pane_id}",
+                ])
+                .first_line(),
             };
         } else {
             // The window before this one is complete, so its active pane and layout apply now.
@@ -146,17 +183,39 @@ pub fn restore(name: &str, root: &str, file: Option<&Path>) -> Option<String> {
                 done.extend(args([";", "select-layout", "-t", &last, &layout]));
             }
             if index.is_none() {
-                let mut call = args(["new-session", "-d", "-s", name, "-c", &cwd, "-P", "-F", "#{session_id}\x1f#{pane_id}"]);
+                let mut call = args([
+                    "new-session",
+                    "-d",
+                    "-s",
+                    name,
+                    "-c",
+                    &cwd,
+                    "-P",
+                    "-F",
+                    "#{session_id}\x1f#{pane_id}",
+                ]);
                 call.extend(keys);
                 let out = tmux::run(&call);
-                let (id, p) = out.first_line()?.split_once('\x1f').map(|(a, b)| (a.to_owned(), b.to_owned()))?;
+                let (id, p) = out
+                    .first_line()?
+                    .split_once('\x1f')
+                    .map(|(a, b)| (a.to_owned(), b.to_owned()))?;
                 if !out.ok {
                     return None;
                 }
                 session = id;
                 pane = Some(p);
             } else {
-                let mut call = args(["new-window", "-t", &format!("{session}:"), "-c", &cwd, "-P", "-F", "#{pane_id}"]);
+                let mut call = args([
+                    "new-window",
+                    "-t",
+                    &format!("{session}:"),
+                    "-c",
+                    &cwd,
+                    "-P",
+                    "-F",
+                    "#{pane_id}",
+                ]);
                 call.extend(keys);
                 call.extend(done);
                 pane = tmux::run(&call).first_line();

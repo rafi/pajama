@@ -68,7 +68,10 @@ fn save_or_stop(args: &[String]) -> i32 {
         },
     };
     if !session.is_project() {
-        return fail(1, &format!("session '{}' was not opened by pj", session.name));
+        return fail(
+            1,
+            &format!("session '{}' was not opened by pj", session.name),
+        );
     }
     if !layout::save(&session.id) {
         return 1;
@@ -76,7 +79,17 @@ fn save_or_stop(args: &[String]) -> i32 {
     if args[0] == "stop" {
         // Attached clients move to the most recently used session instead of detaching.
         let id = session.id.as_str();
-        tmux::run(&["set-option", "-t", id, "detach-on-destroy", "off", ";", "kill-session", "-t", id]);
+        tmux::run(&[
+            "set-option",
+            "-t",
+            id,
+            "detach-on-destroy",
+            "off",
+            ";",
+            "kill-session",
+            "-t",
+            id,
+        ]);
     }
     0
 }
@@ -98,7 +111,10 @@ fn open_command(args: &[String]) -> i32 {
         },
         Some("-") => {
             let current = tmux::current(&sessions).map(|s| s.entry.as_str());
-            match history::recent(&sessions).into_iter().find(|e| Some(e.as_str()) != current) {
+            match history::recent(&sessions)
+                .into_iter()
+                .find(|e| Some(e.as_str()) != current)
+            {
                 Some(t) => t,
                 None => return fail(1, "no previous project"),
             }
@@ -116,8 +132,10 @@ fn open_command(args: &[String]) -> i32 {
             }
         }
         Some(name) => {
-            let mut matches: Vec<String> =
-                history::projects(&sessions).into_iter().filter(|r| basename(r) == name).collect();
+            let mut matches: Vec<String> = history::projects(&sessions)
+                .into_iter()
+                .filter(|r| basename(r) == name)
+                .collect();
             if let Some(s) = tmux::find_name(&sessions, name) {
                 if s.is_project() {
                     if !matches.contains(&s.entry) {
@@ -173,7 +191,9 @@ fn open(root: &str, sessions: &[Session]) -> i32 {
     let file = file.is_file().then_some(file);
     // Projects in different directories may share a folder name, so later sessions get a number.
     let taken: Vec<String> = sessions.iter().map(|s| plain_name(&s.name)).collect();
-    let base = Some(plain_name(basename(root))).filter(|b| !b.is_empty()).unwrap_or_else(|| "pj".into());
+    let base = Some(plain_name(basename(root)))
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| "pj".into());
     let mut name = base.clone();
     let mut n = 2;
     while taken.contains(&name) {
@@ -193,13 +213,34 @@ fn open(root: &str, sessions: &[Session]) -> i32 {
 /// binary through a session option, which tmux quotes for the shell.
 fn tag(id: &str, root: &str) {
     let n = id.trim_start_matches('$');
-    let exe = env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "pj".into());
+    let exe = env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "pj".into());
     let hook = |event: &str| format!("run-shell -b \"#{{q:@pj_bin}} --hook {event} {n}\"");
     tmux::run(&[
-        "set-option", "-t", id, "@pj_root", &tmux_arg(root), ";",
-        "set-option", "-t", id, "@pj_bin", &tmux_arg(&exe), ";",
-        "set-hook", "-t", id, "client-detached", &hook("detached"), ";",
-        "set-hook", "-t", id, "client-session-changed", &hook("visited"),
+        "set-option",
+        "-t",
+        id,
+        "@pj_root",
+        &tmux_arg(root),
+        ";",
+        "set-option",
+        "-t",
+        id,
+        "@pj_bin",
+        &tmux_arg(&exe),
+        ";",
+        "set-hook",
+        "-t",
+        id,
+        "client-detached",
+        &hook("detached"),
+        ";",
+        "set-hook",
+        "-t",
+        id,
+        "client-session-changed",
+        &hook("visited"),
     ]);
 }
 
@@ -212,9 +253,14 @@ fn attach(id: &str, entry: &str, sessions: &[Session]) -> i32 {
         _ => history::add(&[entry]),
     }
     if env::var_os("TMUX").is_some() {
-        Command::new("tmux").args(["switch-client", "-t", id]).status().map_or(1, |s| s.code().unwrap_or(1))
+        Command::new("tmux")
+            .args(["switch-client", "-t", id])
+            .status()
+            .map_or(1, |s| s.code().unwrap_or(1))
     } else {
-        let err = Command::new("tmux").args(["attach-session", "-t", id]).exec();
+        let err = Command::new("tmux")
+            .args(["attach-session", "-t", id])
+            .exec();
         fail(1, &format!("cannot run tmux: {err}"))
     }
 }
@@ -229,7 +275,8 @@ fn hook(args: &[String]) -> i32 {
         "detached" => i32::from(!layout::save(&id)),
         "visited" => {
             // Only sessions pj created carry this hook, so the entry is their root.
-            if let Some(root) = tmux::run(&["display", "-p", "-t", &id, "#{@pj_root}"]).first_line() {
+            if let Some(root) = tmux::run(&["display", "-p", "-t", &id, "#{@pj_root}"]).first_line()
+            {
                 history::add(&[&root]);
             }
             0

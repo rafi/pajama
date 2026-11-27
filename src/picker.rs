@@ -33,7 +33,10 @@ struct Row {
 }
 
 fn now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// The header, then per target the target, a tab, and the row fzf shows.
@@ -102,7 +105,11 @@ pub fn rows(sessions: &[Session], targets: &[String]) -> Vec<String> {
 
     // Each column is as wide as its widest cell or its title.
     let widest = |title: &str, cell: fn(&Row) -> &str| {
-        rows.iter().map(|r| width(cell(r))).max().unwrap_or(0).max(width(title))
+        rows.iter()
+            .map(|r| width(cell(r)))
+            .max()
+            .unwrap_or(0)
+            .max(width(title))
     };
     let w_name = widest("Name", |r| &r.label);
     let w_win = widest("Win", |r| &r.win);
@@ -126,7 +133,10 @@ pub fn rows(sessions: &[Session], targets: &[String]) -> Vec<String> {
         let win_pad = " ".repeat(w_win - width(&r.win));
         let age_pad = " ".repeat(w_age - width(&r.age));
         let (win, age) = if r.stale {
-            (format!("{win_pad}{DIM}{}{RESET}", r.win), format!("{DIM}{}{RESET}{age_pad}", r.age))
+            (
+                format!("{win_pad}{DIM}{}{RESET}", r.win),
+                format!("{DIM}{}{RESET}{age_pad}", r.age),
+            )
         } else {
             (format!("{win_pad}{}", r.win), format!("{}{age_pad}", r.age))
         };
@@ -174,7 +184,9 @@ pub fn pick(query: &str, sessions: &[Session], targets: &[String]) -> Result<Str
     if rows.len() < 2 {
         return no_match();
     }
-    let exe = env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "pj".into());
+    let exe = env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "pj".into());
     let (cols, lines) = terminal_size();
     let mut cmd = Command::new("fzf");
     // Only a typed name may open its single match directly. Bare pj always shows the list.
@@ -207,7 +219,9 @@ pub fn pick(query: &str, sessions: &[Session], targets: &[String]) -> Result<Str
         ])
         .arg(format!("--preview={} --preview {{1}}", sh_quote(&exe)))
         .arg(format!("--preview-window={}", preview_window(cols, lines)))
-        .arg("--bind=alt-p:toggle-preview,ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down")
+        .arg(
+            "--bind=alt-p:toggle-preview,ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down",
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped());
     let Ok(mut child) = cmd.spawn() else {
@@ -217,11 +231,20 @@ pub fn pick(query: &str, sessions: &[Session], targets: &[String]) -> Result<Str
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all((rows.join("\n") + "\n").as_bytes());
     }
-    let Ok(out) = child.wait_with_output() else { return Err(1) };
+    let Ok(out) = child.wait_with_output() else {
+        return Err(1);
+    };
     match out.status.code() {
         Some(0) => {
             let text = String::from_utf8_lossy(&out.stdout);
-            Ok(text.lines().next().unwrap_or("").split('\t').next().unwrap_or("").to_owned())
+            Ok(text
+                .lines()
+                .next()
+                .unwrap_or("")
+                .split('\t')
+                .next()
+                .unwrap_or("")
+                .to_owned())
         }
         Some(130) => Err(130),
         _ => no_match(),
@@ -231,7 +254,11 @@ pub fn pick(query: &str, sessions: &[Session], targets: &[String]) -> Result<Str
 /// Like `wt switch`, the preview sits beside the list on a wide landscape terminal and below
 /// it otherwise. A character is about twice as tall as it is wide, so rows count double.
 pub fn preview_window(cols: usize, rows: usize) -> &'static str {
-    if cols >= 80 && cols >= 2 * rows { "right:50%,border-left" } else { "down:50%,border-top" }
+    if cols >= 80 && cols >= 2 * rows {
+        "right:50%,border-left"
+    } else {
+        "down:50%,border-top"
+    }
 }
 
 #[repr(C)]
@@ -253,7 +280,12 @@ const TIOCGWINSZ: std::ffi::c_ulong = 0x5413;
 
 /// Columns and rows of the terminal on stderr, which fzf draws on.
 fn terminal_size() -> (usize, usize) {
-    let mut size = Winsize { rows: 0, cols: 0, x: 0, y: 0 };
+    let mut size = Winsize {
+        rows: 0,
+        cols: 0,
+        x: 0,
+        y: 0,
+    };
     // SAFETY: TIOCGWINSZ writes one Winsize into the pointer, which lives for the call.
     let ok = unsafe { ioctl(2, TIOCGWINSZ, &mut size as *mut Winsize) } == 0;
     if ok && size.cols > 0 && size.rows > 0 {
@@ -270,10 +302,15 @@ pub fn preview(target: &str) {
         target.to_owned()
     } else {
         // A session pj did not create has no project, so its active pane's folder stands in.
-        let out = tmux::run(&["list-sessions", "-F", "#{@pj_root}\x1f#{session_name}\x1f#{pane_current_path}"]);
+        let out = tmux::run(&[
+            "list-sessions",
+            "-F",
+            "#{@pj_root}\x1f#{session_name}\x1f#{pane_current_path}",
+        ]);
         let found = out.stdout.lines().find_map(|line| {
             let f: Vec<&str> = line.split('\x1f').collect();
-            (f.len() == 3 && f[0].is_empty() && crate::text::plain_name(f[1]) == target).then(|| f[2].to_owned())
+            (f.len() == 3 && f[0].is_empty() && crate::text::plain_name(f[1]) == target)
+                .then(|| f[2].to_owned())
         });
         match found {
             Some(dir) => dir,
@@ -290,7 +327,10 @@ pub fn preview(target: &str) {
         println!("{DIM}Not a git repository: {}{RESET}", tilde(&dir));
         return;
     }
-    let width = env::var("FZF_PREVIEW_COLUMNS").ok().filter(|w| !w.is_empty()).unwrap_or_else(|| "80".into());
+    let width = env::var("FZF_PREVIEW_COLUMNS")
+        .ok()
+        .filter(|w| !w.is_empty())
+        .unwrap_or_else(|| "80".into());
     // fzf reads the pane through a pipe, where wt would drop its colors. Its summary line
     // goes to stderr.
     let wt = Command::new("wt")

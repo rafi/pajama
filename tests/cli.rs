@@ -24,7 +24,11 @@ fn script(file: &Path, body: &str) {
 }
 
 fn text(out: &Output) -> String {
-    format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
 }
 
 fn uid() -> String {
@@ -35,14 +39,22 @@ fn uid() -> String {
 impl Fx {
     fn new() -> Fx {
         // tmux sockets live under this folder and have a length limit, so it stays short.
-        let dir = PathBuf::from(format!("/tmp/pj-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::SeqCst)));
+        let dir = PathBuf::from(format!(
+            "/tmp/pj-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        ));
         let _ = fs::remove_dir_all(&dir);
         for sub in ["home", "state/pj", "config/pj", "tmux", "bin", "code"] {
             fs::create_dir_all(dir.join(sub)).unwrap();
         }
         // pj resolves folders, and /tmp is a link on macOS.
         let dir = dir.canonicalize().unwrap();
-        fs::write(dir.join("config/pj/default.tsv"), "0\t\t1\t1\t\t\n1\t\t0\t1\t\t\n2\t\t0\t1\t\t\n").unwrap();
+        fs::write(
+            dir.join("config/pj/default.tsv"),
+            "0\t\t1\t1\t\t\n1\t\t0\t1\t\t\n2\t\t0\t1\t\t\n",
+        )
+        .unwrap();
         fs::write(dir.join("config/pj/programs"), "# comment\n\nsleep\n").unwrap();
         // A fake fzf keeps its input and arguments, then prints the line whose first field
         // is $FAKE_FZF_PICK, or exits with $FAKE_FZF_STATUS.
@@ -55,7 +67,11 @@ impl Fx {
                  awk -F '\\t' -v pick=\"$FAKE_FZF_PICK\" '$1 == pick' {d}/fzf.in\n"
             ),
         );
-        let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap());
+        let path = format!(
+            "{}:{}",
+            dir.join("bin").display(),
+            std::env::var("PATH").unwrap()
+        );
         let socket = format!("{}/tmux/tmux-{}/default", dir.display(), uid());
         Fx { dir, path, socket }
     }
@@ -96,9 +112,17 @@ impl Fx {
     /// Makes C act as a shell in the first pane of SESSION.
     fn inside(&self, c: &mut Command, session: &str) {
         let target = format!("={session}:");
-        let env = self.tmux(&["display", "-p", "-t", &target, "#{socket_path},#{pid},#{session_id}"]);
-        c.env("TMUX", env.replace('$', ""))
-            .env("TMUX_PANE", self.tmux(&["display", "-p", "-t", &target, "#{pane_id}"]));
+        let env = self.tmux(&[
+            "display",
+            "-p",
+            "-t",
+            &target,
+            "#{socket_path},#{pid},#{session_id}",
+        ]);
+        c.env("TMUX", env.replace('$', "")).env(
+            "TMUX_PANE",
+            self.tmux(&["display", "-p", "-t", &target, "#{pane_id}"]),
+        );
     }
 
     fn pj_in(&self, session: &str, args: &[&str]) -> Output {
@@ -135,15 +159,25 @@ impl Fx {
     }
 
     fn layout(&self, root: &str) -> PathBuf {
-        self.p("state/pj").join(format!("{}.tsv", root.replace('/', "%")))
+        self.p("state/pj")
+            .join(format!("{}.tsv", root.replace('/', "%")))
     }
 
     fn sessions(&self) -> Vec<String> {
-        self.tmux(&["list-sessions", "-F", "#S"]).lines().map(String::from).collect()
+        self.tmux(&["list-sessions", "-F", "#S"])
+            .lines()
+            .map(String::from)
+            .collect()
     }
 
     fn root_of(&self, session: &str) -> String {
-        self.tmux(&["show-options", "-qv", "-t", &format!("={session}:"), "@pj_root"])
+        self.tmux(&[
+            "show-options",
+            "-qv",
+            "-t",
+            &format!("={session}:"),
+            "@pj_root",
+        ])
     }
 
     fn recent(&self) -> Vec<String> {
@@ -155,15 +189,26 @@ impl Fx {
     }
 
     fn fzf_in(&self) -> Vec<String> {
-        fs::read_to_string(self.p("fzf.in")).unwrap_or_default().lines().map(String::from).collect()
+        fs::read_to_string(self.p("fzf.in"))
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+            .collect()
     }
 
     fn fzf_args(&self) -> Vec<String> {
-        fs::read_to_string(self.p("fzf.args")).unwrap_or_default().lines().map(String::from).collect()
+        fs::read_to_string(self.p("fzf.args"))
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+            .collect()
     }
 
     fn row(&self, target: &str) -> String {
-        self.fzf_in().into_iter().find(|l| l.starts_with(&format!("{target}\t"))).unwrap_or_default()
+        self.fzf_in()
+            .into_iter()
+            .find(|l| l.starts_with(&format!("{target}\t")))
+            .unwrap_or_default()
     }
 
     /// Waits until the pane's shell runs a program other than a copy of itself.
@@ -172,9 +217,16 @@ impl Fx {
         for _ in 0..30 {
             let out = Command::new("pgrep").args(["-P", &pid]).output().unwrap();
             if let Some(child) = String::from_utf8_lossy(&out.stdout).lines().next() {
-                let args = Command::new("ps").args(["-o", "args=", "-p", child]).output().unwrap();
+                let args = Command::new("ps")
+                    .args(["-o", "args=", "-p", child])
+                    .output()
+                    .unwrap();
                 let args = String::from_utf8_lossy(&args.stdout).trim().to_owned();
-                if !args.is_empty() && !args.starts_with("sh") && !args.starts_with("-sh") && !args.starts_with("/bin/sh") {
+                if !args.is_empty()
+                    && !args.starts_with("sh")
+                    && !args.starts_with("-sh")
+                    && !args.starts_with("/bin/sh")
+                {
                     return true;
                 }
             }
@@ -194,9 +246,18 @@ impl Fx {
         let shim = self.p("shim");
         fs::create_dir_all(&shim).unwrap();
         for tool in ["tmux", "ps", "pgrep"] {
-            let real = Command::new("sh").args(["-c", &format!("command -v {tool}")]).output().unwrap();
+            let real = Command::new("sh")
+                .args(["-c", &format!("command -v {tool}")])
+                .output()
+                .unwrap();
             let real = String::from_utf8_lossy(&real.stdout).trim().to_owned();
-            script(&shim.join(tool), &format!("#!/bin/sh\necho {tool} >>{}\nexec {real} \"$@\"\n", self.s(file)));
+            script(
+                &shim.join(tool),
+                &format!(
+                    "#!/bin/sh\necho {tool} >>{}\nexec {real} \"$@\"\n",
+                    self.s(file)
+                ),
+            );
         }
         format!("{}:{}", shim.display(), self.path)
     }
@@ -205,13 +266,19 @@ impl Fx {
     fn calls(&self, file: &str, tools: &[&str]) -> Vec<usize> {
         let calls = fs::read_to_string(self.p(file)).unwrap_or_default();
         let _ = fs::remove_file(self.p(file));
-        tools.iter().map(|tool| calls.lines().filter(|l| l == tool).count()).collect()
+        tools
+            .iter()
+            .map(|tool| calls.lines().filter(|l| l == tool).count())
+            .collect()
     }
 }
 
 impl Drop for Fx {
     fn drop(&mut self) {
-        let _ = Command::new("tmux").args(["-S", &self.socket, "kill-server"]).stderr(Stdio::null()).status();
+        let _ = Command::new("tmux")
+            .args(["-S", &self.socket, "kill-server"])
+            .stderr(Stdio::null())
+            .status();
         let _ = fs::remove_dir_all(&self.dir);
     }
 }
@@ -234,7 +301,10 @@ fn a_path_opens_a_tagged_session_from_the_default_layout() {
     assert_eq!(fx.root_of("app"), root);
     assert_eq!(fx.recent().first(), Some(&root));
     let hooks = fx.tmux(&["show-hooks", "-t", "=app:"]);
-    assert!(hooks.contains("--hook detached") && hooks.contains("--hook visited"), "{hooks}");
+    assert!(
+        hooks.contains("--hook detached") && hooks.contains("--hook visited"),
+        "{hooks}"
+    );
 }
 
 #[test]
@@ -274,7 +344,10 @@ fn stop_saves_and_closes_and_refuses_other_sessions() {
     let root = fx.project("code/app");
     fx.pj(&[&root]);
     assert!(fx.pj(&["stop", "app"]).status.success());
-    assert_eq!(fs::read_to_string(fx.layout(&root)).unwrap().lines().next(), Some(format!("root\t{root}").as_str()));
+    assert_eq!(
+        fs::read_to_string(fx.layout(&root)).unwrap().lines().next(),
+        Some(format!("root\t{root}").as_str())
+    );
     assert!(fx.sessions().is_empty());
 
     fx.tmux(&["new-session", "-d", "-s", "live", "-c", &fx.s("")]);
@@ -287,7 +360,10 @@ fn saving_records_programs_without_ps() {
     let fx = Fx::new();
     let root = fx.project("code/app");
     fs::create_dir_all(fx.p("config/pj/resume")).unwrap();
-    script(&fx.p("config/pj/resume/tail"), "#!/bin/sh\necho \"tail again $1\" | cut -d' ' -f1,2\n");
+    script(
+        &fx.p("config/pj/resume/tail"),
+        "#!/bin/sh\necho \"tail again $1\" | cut -d' ' -f1,2\n",
+    );
     fx.pj(&[&root]);
     fx.run_in("=app:1", "sleep 300");
     fx.run_in("=app:2", "tail -f /dev/null");
@@ -296,13 +372,24 @@ fn saving_records_programs_without_ps() {
     fx.tmux(&["split-window", "-d", "-t", "=app:0", "-c", &tab]);
 
     let path = fx.recording_path("calls");
-    let out = fx.cmd(PJ).env("PATH", path).args(["save", "app"]).output().unwrap();
+    let out = fx
+        .cmd(PJ)
+        .env("PATH", path)
+        .args(["save", "app"])
+        .output()
+        .unwrap();
     assert!(out.status.success(), "{}", text(&out));
     assert_eq!(fx.calls("calls", &["ps", "pgrep"]), [0, 0]);
 
     let lines = layout_lines(&fx.layout(&root));
     assert!(lines.iter().all(|f| f.len() == 6), "{lines:?}");
-    let command = |w: &str| lines.iter().filter(|f| f[0] == w).map(|f| f[5].clone()).collect::<Vec<_>>();
+    let command = |w: &str| {
+        lines
+            .iter()
+            .filter(|f| f[0] == w)
+            .map(|f| f[5].clone())
+            .collect::<Vec<_>>()
+    };
     assert_eq!(command("0"), ["", ""]);
     assert_eq!(command("1"), ["sleep 300"]);
     assert_eq!(command("2"), ["tail again"]);
@@ -324,14 +411,29 @@ fn a_saved_layout_comes_back() {
     )
     .unwrap();
     fx.pj(&[&root]);
-    let panes = fx.tmux(&["list-panes", "-t", "=app:0", "-F", "#{pane_index} #{pane_current_path}"]);
+    let panes = fx.tmux(&[
+        "list-panes",
+        "-t",
+        "=app:0",
+        "-F",
+        "#{pane_index} #{pane_current_path}",
+    ]);
     assert_eq!(panes, format!("0 {root}/a\n1 {root}/b\n2 {root}/c"));
     // Splits make the newest pane active, so the saved active pane is selected again.
-    assert_eq!(fx.tmux(&["display", "-p", "-t", "=app:0", "#{pane_index}"]), "1");
-    assert_eq!(fx.tmux(&["display", "-p", "-t", "=app:", "#{window_index}"]), "1");
+    assert_eq!(
+        fx.tmux(&["display", "-p", "-t", "=app:0", "#{pane_index}"]),
+        "1"
+    );
+    assert_eq!(
+        fx.tmux(&["display", "-p", "-t", "=app:", "#{window_index}"]),
+        "1"
+    );
     assert!(fx.wait_child("=app:1"));
     sleep(Duration::from_millis(300));
-    assert!(fx.tmux(&["capture-pane", "-p", "-t", "=app:0.1"]).contains("echo semi;"));
+    assert!(
+        fx.tmux(&["capture-pane", "-p", "-t", "=app:0.1"])
+            .contains("echo semi;")
+    );
 }
 
 #[test]
@@ -341,7 +443,17 @@ fn a_window_layout_survives_save_and_restore() {
     fs::write(fx.p("config/pj/default.tsv"), "0\t\t1\t1\t\t\n").unwrap();
     fx.pj(&[&root]);
     fx.tmux(&["resize-window", "-t", "=app:0", "-x", "120", "-y", "40"]);
-    fx.tmux(&["split-window", "-d", "-h", "-l", "30", "-t", "=app:0", "-c", &root]);
+    fx.tmux(&[
+        "split-window",
+        "-d",
+        "-h",
+        "-l",
+        "30",
+        "-t",
+        "=app:0",
+        "-c",
+        &root,
+    ]);
     let shape = |s: String| {
         // Pane ids change on every restore, so they are dropped before comparing.
         let mut out = String::new();
@@ -356,7 +468,10 @@ fn a_window_layout_survives_save_and_restore() {
     let before = shape(fx.tmux(&["display", "-p", "-t", "=app:0", "#{window_layout}"]));
     fx.pj(&["stop", "app"]);
     fx.pj(&[&root]);
-    assert_eq!(shape(fx.tmux(&["display", "-p", "-t", "=app:0", "#{window_layout}"])), before);
+    assert_eq!(
+        shape(fx.tmux(&["display", "-p", "-t", "=app:0", "#{window_layout}"])),
+        before
+    );
 }
 
 #[test]
@@ -372,9 +487,19 @@ fn splits_that_do_not_fit_open_their_own_windows() {
     file.push_str("1\t\t0\t1\t\tsleep 300\n");
     fs::write(fx.layout(&root), file).unwrap();
     fx.pj(&[&root]);
-    assert_eq!(fx.tmux(&["list-panes", "-s", "-t", "=app:"]).lines().count(), 7);
+    assert_eq!(
+        fx.tmux(&["list-panes", "-s", "-t", "=app:"])
+            .lines()
+            .count(),
+        7
+    );
     assert!(fx.tmux(&["list-windows", "-t", "=app:"]).lines().count() > 2);
-    let last = fx.tmux(&["list-windows", "-t", "=app:", "-F", "#{window_index}"]).lines().last().unwrap().to_owned();
+    let last = fx
+        .tmux(&["list-windows", "-t", "=app:", "-F", "#{window_index}"])
+        .lines()
+        .last()
+        .unwrap()
+        .to_owned();
     assert!(fx.wait_child(&format!("=app:{last}")));
 }
 
@@ -428,22 +553,51 @@ fn the_picker_rows_follow_wt_switch() {
     assert_eq!(out.status.code(), Some(130));
 
     let rows = fx.fzf_in();
-    assert!(rows[0].starts_with('\t') && ["Name", "Win", "Window", "Age", "Path"].iter().all(|t| rows[0].contains(t)));
-    assert!(rows[1].starts_with(&format!("{p2}\t")), "recent first: {rows:?}");
-    assert!(fx.row(&p2).starts_with(&format!("{p2}\t▸● p2 ")), "{}", fx.row(&p2));
+    assert!(
+        rows[0].starts_with('\t')
+            && ["Name", "Win", "Window", "Age", "Path"]
+                .iter()
+                .all(|t| rows[0].contains(t))
+    );
+    assert!(
+        rows[1].starts_with(&format!("{p2}\t")),
+        "recent first: {rows:?}"
+    );
+    assert!(
+        fx.row(&p2).starts_with(&format!("{p2}\t▸● p2 ")),
+        "{}",
+        fx.row(&p2)
+    );
     assert!(fx.row(&p2).contains("  3  "));
     let stale = fx.row(&old);
-    assert!(stale.contains("\x1b[2m3\x1b[0m") && stale.contains("\x1b[2mnow\x1b[0m"), "{stale:?}");
+    assert!(
+        stale.contains("\x1b[2m3\x1b[0m") && stale.contains("\x1b[2mnow\x1b[0m"),
+        "{stale:?}"
+    );
     let other = fx.row("main");
-    assert!(other.starts_with("main\t\x1b[2m ◇ main⏳ ") && other.ends_with("tmux session\x1b[0m"), "{other:?}");
+    assert!(
+        other.starts_with("main\t\x1b[2m ◇ main⏳ ") && other.ends_with("tmux session\x1b[0m"),
+        "{other:?}"
+    );
     assert_eq!(rows.iter().filter(|r| r.contains('▸')).count(), 1);
 
     let args = fx.fzf_args();
-    for option in ["--header-lines=1", "--layout=reverse", "--height=90%", "--highlight-line", "--no-separator", "--ansi", "--with-shell=sh -c"] {
+    for option in [
+        "--header-lines=1",
+        "--layout=reverse",
+        "--height=90%",
+        "--highlight-line",
+        "--no-separator",
+        "--ansi",
+        "--with-shell=sh -c",
+    ] {
         assert!(args.contains(&option.to_owned()), "{option}: {args:?}");
     }
     assert!(!args.contains(&"--select-1".to_owned()));
-    assert!(args.iter().any(|a| a.starts_with("--preview=") && a.ends_with(" --preview {1}")));
+    assert!(
+        args.iter()
+            .any(|a| a.starts_with("--preview=") && a.ends_with(" --preview {1}"))
+    );
 }
 
 #[test]
@@ -488,7 +642,11 @@ fn dash_returns_to_a_session_pj_did_not_create() {
     assert_eq!(fx.recent().first().map(String::as_str), Some("main"));
     fx.tmux(&["kill-session", "-t", "=main⏳:"]);
     let out = fx.pj_in("p2", &["-"]);
-    assert_eq!(out.status.code(), Some(1), "a closed session is not offered");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a closed session is not offered"
+    );
 }
 
 #[test]
@@ -567,7 +725,11 @@ fn a_missing_folder_and_an_old_layout_are_reported() {
     assert!(text(&out).contains(&gone));
 
     let old = fx.project("code/p7");
-    fs::write(fx.layout(&old), format!("root\t{old}\n0\tname\t\t1\t1\t\t\n")).unwrap();
+    fs::write(
+        fx.layout(&old),
+        format!("root\t{old}\n0\tname\t\t1\t1\t\t\n"),
+    )
+    .unwrap();
     let out = fx.pj(&[&old]);
     assert_eq!(out.status.code(), Some(1));
     assert!(text(&out).contains("could be restored"));
@@ -592,11 +754,25 @@ fn each_command_reads_tmux_once() {
 
     let p3 = fx.project("code/p3");
     fx.cmd(PJ).env("PATH", &path).arg(&p3).output().unwrap();
-    assert_eq!(fx.calls("calls", &["tmux"]), [7], "new project from the 3 window default");
+    assert_eq!(
+        fx.calls("calls", &["tmux"]),
+        [7],
+        "new project from the 3 window default"
+    );
 
-    let n = fx.tmux(&["display", "-p", "-t", "=p3:", "#{session_id}"]).replace('$', "");
-    fx.cmd(PJ).env("PATH", &path).args(["--hook", "detached", &n]).output().unwrap();
-    fx.cmd(PJ).env("PATH", &path).args(["--hook", "visited", &n]).output().unwrap();
+    let n = fx
+        .tmux(&["display", "-p", "-t", "=p3:", "#{session_id}"])
+        .replace('$', "");
+    fx.cmd(PJ)
+        .env("PATH", &path)
+        .args(["--hook", "detached", &n])
+        .output()
+        .unwrap();
+    fx.cmd(PJ)
+        .env("PATH", &path)
+        .args(["--hook", "visited", &n])
+        .output()
+        .unwrap();
     assert_eq!(fx.calls("calls", &["tmux"]), [2], "hooks");
 }
 
@@ -604,14 +780,40 @@ fn each_command_reads_tmux_once() {
 fn the_preview_shows_worktrees_and_history() {
     let fx = Fx::new();
     let repo = fx.project("code/repo");
-    let git = |args: &[&str]| fx.cmd("git").args(["-C", &repo]).args(args).output().unwrap();
+    let git = |args: &[&str]| {
+        fx.cmd("git")
+            .args(["-C", &repo])
+            .args(args)
+            .output()
+            .unwrap()
+    };
     git(&["init", "-q"]);
-    git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "first commit"]);
-    script(&fx.p("bin/wt"), "#!/bin/sh\necho \"WT $* COLUMNS=$COLUMNS\"\n");
+    git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "first commit",
+    ]);
+    script(
+        &fx.p("bin/wt"),
+        "#!/bin/sh\necho \"WT $* COLUMNS=$COLUMNS\"\n",
+    );
 
-    let out = fx.cmd(PJ).env("FZF_PREVIEW_COLUMNS", "70").args(["--preview", &repo]).output().unwrap();
+    let out = fx
+        .cmd(PJ)
+        .env("FZF_PREVIEW_COLUMNS", "70")
+        .args(["--preview", &repo])
+        .output()
+        .unwrap();
     let shown = text(&out);
-    let wt = shown.find(&format!("WT -C {repo} list COLUMNS=70")).expect(&shown);
+    let wt = shown
+        .find(&format!("WT -C {repo} list COLUMNS=70"))
+        .expect(&shown);
     assert!(shown[wt..].contains("first commit"), "{shown}");
 
     fs::remove_file(fx.p("bin/wt")).unwrap();
@@ -642,7 +844,11 @@ fn the_omp_example_resumes_the_conversation_it_holds() {
     let fx = Fx::new();
     let root = fx.project("code/app");
     fs::create_dir_all(fx.p("config/pj/resume")).unwrap();
-    fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/resume/omp"), fx.p("config/pj/resume/omp")).unwrap();
+    fs::copy(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/examples/resume/omp"),
+        fx.p("config/pj/resume/omp"),
+    )
+    .unwrap();
     // A fake omp. macOS kills a copied sleep, so it is a link.
     std::os::unix::fs::symlink("/bin/sleep", fx.p("bin/omp")).unwrap();
     let sessions = fx.p("home/.omp/agent/sessions/-app");
@@ -658,7 +864,13 @@ fn the_omp_example_resumes_the_conversation_it_holds() {
     fx.run_in("=app:2", &format!("{omp} 300"));
     fx.pj(&["save", "app"]);
     let lines = layout_lines(&fx.layout(&root));
-    let command = |w: &str| lines.iter().find(|f| f[0] == w).map(|f| f[5].clone()).unwrap();
+    let command = |w: &str| {
+        lines
+            .iter()
+            .find(|f| f[0] == w)
+            .map(|f| f[5].clone())
+            .unwrap()
+    };
     assert_eq!(command("1"), format!("omp --resume '{file}'"));
     assert_eq!(command("2"), "omp -c");
 }

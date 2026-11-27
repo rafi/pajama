@@ -13,7 +13,12 @@ fn file() -> PathBuf {
 
 fn read() -> Vec<String> {
     fs::read_to_string(file())
-        .map(|text| text.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+        .map(|text| {
+            text.lines()
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -26,7 +31,9 @@ pub fn recent(sessions: &[Session]) -> Vec<String> {
             if entry.starts_with('/') {
                 Path::new(entry).is_dir()
             } else {
-                sessions.iter().any(|s| !s.is_project() && s.entry == *entry)
+                sessions
+                    .iter()
+                    .any(|s| !s.is_project() && s.entry == *entry)
             }
         })
         .collect()
@@ -35,7 +42,11 @@ pub fn recent(sessions: &[Session]) -> Vec<String> {
 /// Moves each entry to the top, the last one ending first. At most 100 are kept.
 pub fn add(entries: &[&str]) {
     let mut list: Vec<String> = entries.iter().rev().map(|e| e.to_string()).collect();
-    list.extend(read().into_iter().filter(|e| !entries.contains(&e.as_str())));
+    list.extend(
+        read()
+            .into_iter()
+            .filter(|e| !entries.contains(&e.as_str())),
+    );
     list.truncate(100);
     let _ = paths::write_atomic(&file(), &(list.join("\n") + "\n"));
 }
@@ -61,7 +72,11 @@ fn projects_after(recent: &[String], sessions: &[Session]) -> Vec<String> {
             }
         }
     }
-    let mut out: Vec<String> = recent.iter().filter(|e| e.starts_with('/')).cloned().collect();
+    let mut out: Vec<String> = recent
+        .iter()
+        .filter(|e| e.starts_with('/'))
+        .cloned()
+        .collect();
     out.extend(others.into_iter().filter(|root| !recent.contains(root)));
     out
 }
