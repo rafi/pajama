@@ -37,6 +37,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/pj" LICENSE README.md "$dir/"
           cp completions/* "$dir/completions/"
           cp man/pj.1 "$dir/man/"
+          cp -R examples "$dir/"
           tar -czf "$dir.tar.gz" "$dir"
       - uses: actions/upload-artifact@v7
         with:
