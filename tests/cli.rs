@@ -333,11 +333,57 @@ fn a_path_opens_a_tagged_session_from_the_default_layout() {
     assert_eq!(fx.tmux(&["list-windows", "-t", "=app:"]).lines().count(), 3);
     assert_eq!(fx.root_of("app"), root);
     assert_eq!(fx.recent().first(), Some(&root));
-    let hooks = fx.tmux(&["show-hooks", "-t", "=app:"]);
+    let own = fx.tmux(&["show-hooks", "-t", "=app:"]);
     assert!(
-        hooks.contains("--hook detached") && hooks.contains("--hook visited"),
-        "{hooks}"
+        !own.contains("client-session-changed") && !own.contains("client-detached"),
+        "{own}"
     );
+    let global = fx.tmux(&["show-hooks", "-g"]);
+    let hook = |name: &str| {
+        global
+            .lines()
+            .find(|l| l.starts_with(&format!("{name}[42] ")))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    assert!(
+        hook("client-detached").contains("--hook detached"),
+        "{global}"
+    );
+    assert!(
+        hook("client-session-changed").contains("--hook visited"),
+        "{global}"
+    );
+}
+
+#[test]
+fn the_hooks_skip_sessions_pj_did_not_create() {
+    let fx = Fx::new();
+    let root = fx.project("code/app");
+    fx.pj(&[&root]);
+    fx.tmux(&["new-session", "-d", "-s", "plain", "-c", &fx.s("")]);
+    // Without the guard, the hook would run this through the session's own @pj_bin.
+    let spy = fx.p("bin/spy");
+    script(
+        &spy,
+        &format!("#!/bin/sh\necho \"$@\" >>{}\n", fx.s("spied")),
+    );
+    fx.tmux(&[
+        "set-option",
+        "-t",
+        "=plain:",
+        "@pj_bin",
+        &spy.display().to_string(),
+    ]);
+    let mut client = fx.attach_client("app");
+    let name = fx.tmux(&["list-clients", "-t", "=app:", "-F", "#{client_name}"]);
+    fx.tmux(&["switch-client", "-c", &name, "-t", "=plain:"]);
+    fx.tmux(&["detach-client", "-s", "=plain:"]);
+    let _ = client.wait();
+    sleep(Duration::from_millis(500));
+    assert!(!fx.p("spied").exists(), "pj ran for a plain session");
+    let messages = fx.tmux(&["show-messages"]);
+    assert!(!messages.contains("returned"), "{messages}");
 }
 
 #[test]

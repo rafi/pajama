@@ -69,7 +69,9 @@ saves the layout of these sessions, because they have no project folder, but `pj
 back to one you left with pj.
 
 Inside tmux pj switches the client, outside it attaches. Layouts are saved when you
-detach, and on `pj save` and `pj stop`.
+detach, and on `pj save` and `pj stop`. To notice detaching and switching, pj sets the
+global tmux hooks `client-detached[42]` and `client-session-changed[42]`, which act only
+in its own sessions and leave your other hooks running.
 
 ### The picker
 

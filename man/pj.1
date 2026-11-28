@@ -27,6 +27,13 @@ A layout is saved when you detach from its session, and on
 .B pj save
 and
 .BR "pj stop" .
+To notice detaching and switching,
+.B pj
+sets the global tmux hooks
+.B client\-detached[42]
+and
+.BR client\-session\-changed[42] ,
+which act only in its own sessions and leave your other hooks running.
 .PP
 The projects
 .B pj

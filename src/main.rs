@@ -217,21 +217,26 @@ fn open(root: &str, sessions: &[Session]) -> i32 {
     attach(&restored.id, root, sessions, &finish)
 }
 
-/// The commands that mark session ID as the pj session of project ROOT and set its hooks.
-/// The hooks name the session by the digits of its id, which survive quoting and a rename,
-/// and call this binary through a session option, which tmux quotes for the shell.
+/// Commands that tag session ID as project ROOT and install pj's hooks.
+/// The hooks are global because a per-session hook would hide other tools' hooks of the
+/// same name. They skip sessions without a root, and pass the session number without
+/// its `$` so the shell can't expand it.
 fn tag(id: &str, root: &str) -> Vec<String> {
-    let n = id.trim_start_matches('$');
     let exe = env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "pj".into());
-    let hook = |event: &str| format!("run-shell -b \"#{{q:@pj_bin}} --hook {event} {n}\"");
+    let hook = |event: &str| {
+        format!(
+            "if-shell -F '#{{@pj_root}}' \
+             'run-shell -b \"#{{q:@pj_bin}} --hook {event} #{{s/[$]//:session_id}}\"'"
+        )
+    };
     #[rustfmt::skip]
     let call = [
         "set-option", "-t", id, "@pj_root", &tmux_arg(root), ";",
         "set-option", "-t", id, "@pj_bin", &tmux_arg(&exe), ";",
-        "set-hook", "-t", id, "client-detached", &hook("detached"), ";",
-        "set-hook", "-t", id, "client-session-changed", &hook("visited"),
+        "set-hook", "-g", "client-detached[42]", &hook("detached"), ";",
+        "set-hook", "-g", "client-session-changed[42]", &hook("visited"),
     ];
     call.iter().map(|s| s.to_string()).collect()
 }
@@ -280,7 +285,7 @@ fn hook(args: &[String]) -> i32 {
     match event.as_str() {
         "detached" => i32::from(!layout::save(&id)),
         "visited" => {
-            // Only sessions pj created carry this hook, so the entry is their root.
+            // The hook runs only in sessions with a root, so the entry is their root.
             if let Some(root) = tmux::run(&["display", "-p", "-t", &id, "#{@pj_root}"]).first_line()
             {
                 history::add(&[&root]);
