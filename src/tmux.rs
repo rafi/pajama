@@ -101,6 +101,10 @@ pub fn snapshot() -> Snapshot {
             current = Some(first.to_owned());
             text = Some(rest.to_owned());
         }
+    } else if let Ok(tmux) = env::var("TMUX") {
+        // A run-shell job, as from a key binding, has no pane. TMUX ends with the number
+        // of the session it runs for.
+        current = tmux.rsplit(',').next().map(|n| format!("${n}"));
     }
     let text = text.unwrap_or_else(|| run(&tail).stdout);
     let mut bin = String::new();

@@ -395,6 +395,25 @@ fn a_switch_hook_from_an_older_pj_exits_quietly() {
 }
 
 #[test]
+fn dash_from_a_key_binding_goes_back_and_forth() {
+    let fx = Fx::new();
+    let a = fx.project("code/a");
+    let b = fx.project("code/b");
+    fx.pj(&[&a]);
+    fx.pj(&[&b]);
+    let mut client = fx.attach_client("b");
+    // A binding's run-shell job has TMUX but no TMUX_PANE.
+    let dash = |from: &str| {
+        fx.tmux(&["run-shell", "-t", &format!("={from}:"), &format!("{PJ} -")]);
+        fx.tmux(&["list-clients", "-F", "#{session_name}"])
+    };
+    assert_eq!(dash("b"), "a");
+    assert_eq!(dash("a"), "b");
+    let _ = client.kill();
+    let _ = client.wait();
+}
+
+#[test]
 fn switching_sessions_in_tmux_records_the_project_through_its_hook() {
     let fx = Fx::new();
     let a = fx.project("code/a");
