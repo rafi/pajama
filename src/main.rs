@@ -12,6 +12,7 @@ mod text;
 mod tmux;
 
 use std::env;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
@@ -219,24 +220,44 @@ fn open(root: &str, snap: &Snapshot) -> i32 {
     attach(&restored.id, root, snap, &finish)
 }
 
-/// Commands that tag session ID as project ROOT and install pj's hooks.
+/// The command that tags session ID as project ROOT.
+fn tag(id: &str, root: &str) -> Vec<String> {
+    ["set-option", "-t", id, "@pj_root", &tmux_arg(root)]
+        .map(String::from)
+        .to_vec()
+}
+
+/// The commands that install pj's hooks, or none when INSTALLED, the stamp the snapshot
+/// read, shows they are current. The stamp covers this binary's path and the hook text, so
+/// a moved binary or a pj with other hooks installs them again.
+///
 /// The hooks are global because a per-session hook would hide other tools' hooks of the
 /// same name. They skip sessions without a root. The shell gets the root quoted by tmux,
 /// and the session number without its `$` so it can't expand it.
-fn tag(id: &str, root: &str) -> Vec<String> {
+fn install_hooks(installed: &str) -> Vec<String> {
+    let exe = paths::exe();
     let hook = |event: &str, arg: &str| {
         format!(
             "if-shell -F '#{{@pj_root}}' \
              'run-shell -b \"#{{q:@pj_bin}} --hook {event} {arg}\"'"
         )
     };
+    let detached = hook("detached", "#{s/[$]//:session_id}");
+    let visited = hook("visited", "#{q:@pj_root}");
+    let mut hasher = DefaultHasher::new();
+    (&exe, &detached, &visited).hash(&mut hasher);
+    let stamp = format!("{:016x}", hasher.finish());
+    if stamp == installed {
+        return Vec::new();
+    }
     #[rustfmt::skip]
     let call = [
-        "set-option", "-t", id, "@pj_root", &tmux_arg(root), ";",
-        "set-hook", "-g", "client-detached[42]", &hook("detached", "#{s/[$]//:session_id}"), ";",
-        "set-hook", "-g", "client-session-changed[42]", &hook("visited", "#{q:@pj_root}"),
+        "set-option", "-g", "@pj_bin", &tmux_arg(&exe), ";",
+        "set-hook", "-g", "client-detached[42]", &detached, ";",
+        "set-hook", "-g", "client-session-changed[42]", &visited, ";",
+        "set-option", "-g", "@pj_hooks", &stamp,
     ];
-    call.iter().map(|s| s.to_string()).collect()
+    call.map(String::from).to_vec()
 }
 
 /// Goes to session ID, first running the tmux commands in BEFORE in the same call. The
@@ -247,13 +268,7 @@ fn attach(id: &str, entry: &str, snap: &Snapshot, before: &[String]) -> i32 {
         Some(current) if current.id != id => history::add(&[&current.entry, entry]),
         _ => history::add(&[entry]),
     }
-    // The hooks run whichever pj ran last, so an upgrade that moves the binary doesn't
-    // leave them calling a path that is gone.
-    let exe = paths::exe();
-    let mut call = Vec::new();
-    if snap.bin != exe {
-        call.extend(["set-option", "-g", "@pj_bin", &tmux_arg(&exe)].map(String::from));
-    }
+    let mut call = install_hooks(&snap.hooks);
     if !before.is_empty() {
         if !call.is_empty() {
             call.push(";".into());

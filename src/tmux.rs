@@ -56,11 +56,11 @@ impl Session {
 /// still hold a tab, so a path is always the last field and is split off with splitn.
 pub const SEP: &str = "\t";
 
-/// Every session, and the binary pj's global hooks run.
+/// Every session, and which hooks pj installed.
 pub struct Snapshot {
     pub sessions: Vec<Session>,
-    /// The global `@pj_bin`, empty when it is unset.
-    pub bin: String,
+    /// The global `@pj_hooks` stamp of the installed hooks, empty when it is unset.
+    pub hooks: String,
 }
 
 /// Reads every session in one tmux call, so a command makes one more call at most, to act.
@@ -76,7 +76,7 @@ pub fn snapshot() -> Snapshot {
     .join(SEP);
     let mut current = None;
     let mut text = None;
-    // The global @pj_bin comes last and prints nothing when unset, so it is the one line
+    // The global @pj_hooks comes last and prints nothing when unset, so it is the one line
     // that does not start with a session id.
     let tail = [
         "list-sessions",
@@ -85,7 +85,7 @@ pub fn snapshot() -> Snapshot {
         ";",
         "show-options",
         "-gqv",
-        "@pj_bin",
+        "@pj_hooks",
     ];
     // TMUX_PANE names the pane this shell runs in. Without it tmux would guess the most
     // recent session. Asking in the same call saves one.
@@ -107,11 +107,11 @@ pub fn snapshot() -> Snapshot {
         current = tmux.rsplit(',').next().map(|n| format!("${n}"));
     }
     let text = text.unwrap_or_else(|| run(&tail).stdout);
-    let mut bin = String::new();
+    let mut hooks = String::new();
     let mut sessions = Vec::new();
     for line in text.lines() {
         if !line.starts_with('$') {
-            bin = line.to_owned();
+            hooks = line.to_owned();
             continue;
         }
         let f: Vec<&str> = line.splitn(6, SEP).collect();
@@ -132,7 +132,7 @@ pub fn snapshot() -> Snapshot {
             current: current.as_deref() == Some(f[0]),
         });
     }
-    Snapshot { sessions, bin }
+    Snapshot { sessions, hooks }
 }
 
 pub fn find_entry<'a>(sessions: &'a [Session], entry: &str) -> Option<&'a Session> {

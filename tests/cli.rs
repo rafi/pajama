@@ -357,6 +357,29 @@ fn a_path_opens_a_tagged_session_from_the_default_layout() {
 }
 
 #[test]
+fn hooks_an_older_pj_installed_are_replaced_by_the_next_switch() {
+    let fx = Fx::new();
+    let a = fx.project("code/a");
+    let b = fx.project("code/b");
+    fx.pj(&[&a]);
+    fx.pj(&[&b]);
+    let ours = || {
+        fx.tmux(&["show-hooks", "-g"])
+            .lines()
+            .filter(|l| l.contains("[42]"))
+            .map(String::from)
+            .collect::<Vec<_>>()
+    };
+    let fresh = ours();
+    fx.tmux(&["set-option", "-gu", "@pj_hooks"]);
+    for hook in ["client-detached[42]", "client-session-changed[42]"] {
+        fx.tmux(&["set-hook", "-g", hook, "run-shell -b true"]);
+    }
+    fx.pj(&[&a]);
+    assert_eq!(ours(), fresh);
+}
+
+#[test]
 fn the_hooks_skip_sessions_pj_did_not_create() {
     let fx = Fx::new();
     let root = fx.project("code/app");
@@ -422,6 +445,7 @@ fn switching_sessions_in_tmux_records_the_project_through_its_hook() {
     fx.pj(&[&odd]);
     // A binary that moved, as after an upgrade, is replaced by the next pj that runs.
     fx.tmux(&["set-option", "-g", "@pj_bin", "/gone/pj"]);
+    fx.tmux(&["set-option", "-g", "@pj_hooks", "from /gone/pj"]);
     fx.pj(&[&a]);
     assert_eq!(fx.tmux(&["show-options", "-gv", "@pj_bin"]), PJ);
 
