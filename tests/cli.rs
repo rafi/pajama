@@ -2,7 +2,7 @@
 //! state and config folders, so real sessions and layouts stay untouched.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -590,6 +590,18 @@ fn saving_records_programs_without_ps() {
     assert_eq!(command("1"), ["sleep 300"]);
     assert_eq!(command("2"), ["tail again"]);
     assert!(lines.iter().any(|f| f[4] == tab.replace('\t', " ")));
+}
+
+#[test]
+fn saving_an_unchanged_layout_leaves_the_file_alone() {
+    let fx = Fx::new();
+    let root = fx.project("code/app");
+    fx.pj(&[&root]);
+    let inode = || fs::metadata(fx.layout(&root)).unwrap().ino();
+    fx.pj(&["save", "app"]);
+    let first = inode();
+    fx.pj(&["save", "app"]);
+    assert_eq!(inode(), first);
 }
 
 #[test]

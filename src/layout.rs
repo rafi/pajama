@@ -56,7 +56,12 @@ pub fn save(id: &str) -> bool {
         text.push_str(&fields.join("\t"));
         text.push('\n');
     }
-    paths::write_atomic(&paths::layout_file(root), &text).is_ok()
+    // Every detach saves, and the layout rarely changes between two.
+    let file = paths::layout_file(root);
+    if fs::read_to_string(&file).is_ok_and(|old| old == text) {
+        return true;
+    }
+    paths::write_atomic(&file, &text).is_ok()
 }
 
 /// The command that brings back the program a pane's shell runs. An executable
