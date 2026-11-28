@@ -38,6 +38,8 @@ pub fn run<S: AsRef<OsStr>>(args: &[S]) -> Out {
 pub struct Session {
     pub id: String,
     pub entry: String,
+    /// For a session pj did not create, the folder of its active pane.
+    pub dir: String,
     pub name: String,
     pub windows: String,
     pub window: String,
@@ -71,7 +73,9 @@ pub fn snapshot() -> Snapshot {
         "#{session_windows}",
         "#{window_name}",
         "#{session_activity}",
-        "#{@pj_root}",
+        // A path comes last since it may hold a tab. A session pj did not create has no
+        // root, so its active pane's folder comes after a `:`, which no root starts with.
+        "#{?@pj_root,#{@pj_root},:#{pane_current_path}}",
     ]
     .join(SEP);
     let mut current = None;
@@ -118,13 +122,14 @@ pub fn snapshot() -> Snapshot {
         if f.len() < 6 {
             continue;
         }
+        let (entry, dir) = match f[5].strip_prefix(':') {
+            Some(dir) => (plain_name(f[1]), dir.to_owned()),
+            None => (f[5].to_owned(), String::new()),
+        };
         sessions.push(Session {
             id: f[0].to_owned(),
-            entry: if f[5].is_empty() {
-                plain_name(f[1])
-            } else {
-                f[5].to_owned()
-            },
+            entry,
+            dir,
             name: f[1].to_owned(),
             windows: f[2].to_owned(),
             window: f[3].to_owned(),

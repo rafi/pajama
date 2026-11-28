@@ -804,7 +804,7 @@ fn the_picker_rows_follow_wt_switch() {
         "recent first: {rows:?}"
     );
     assert!(
-        fx.row(&p2).starts_with(&format!("{p2}\t▸● p2 ")),
+        fx.row(&p2).starts_with(&format!("{p2}\t{p2}\t▸● p2 ")),
         "{}",
         fx.row(&p2)
     );
@@ -816,7 +816,8 @@ fn the_picker_rows_follow_wt_switch() {
     );
     let other = fx.row("main");
     assert!(
-        other.starts_with("main\t\x1b[2m ◇ main⏳ ") && other.ends_with("tmux session\x1b[0m"),
+        other.starts_with(&format!("main\t{}\t\x1b[2m ◇ main⏳ ", fx.dir.display()))
+            && other.ends_with("tmux session\x1b[0m"),
         "{other:?}"
     );
     assert_eq!(rows.iter().filter(|r| r.contains('▸')).count(), 1);
@@ -834,10 +835,6 @@ fn the_picker_rows_follow_wt_switch() {
         assert!(args.contains(&option.to_owned()), "{option}: {args:?}");
     }
     assert!(!args.contains(&"--select-1".to_owned()));
-    assert!(
-        args.iter()
-            .any(|a| a.starts_with("--preview=") && a.ends_with(" --preview {1}"))
-    );
 }
 
 #[test]
@@ -1016,29 +1013,36 @@ fn each_command_reads_tmux_once() {
     assert_eq!(fx.calls("calls", &["tmux"]), [1], "hooks");
 }
 
-#[test]
-fn the_preview_shows_worktrees_and_history() {
-    let fx = Fx::new();
-    let repo = fx.project("code/repo");
-    let git = |args: &[&str]| {
+/// Makes a git repository at REL with one commit, and returns its path.
+fn repo_with_commit(fx: &Fx, rel: &str) -> String {
+    let repo = fx.project(rel);
+    for args in [
+        &["init", "-q"][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "first commit",
+        ],
+    ] {
         fx.cmd("git")
             .args(["-C", &repo])
             .args(args)
             .output()
-            .unwrap()
-    };
-    git(&["init", "-q"]);
-    git(&[
-        "-c",
-        "user.name=t",
-        "-c",
-        "user.email=t@t",
-        "commit",
-        "-q",
-        "--allow-empty",
-        "-m",
-        "first commit",
-    ]);
+            .unwrap();
+    }
+    repo
+}
+
+#[test]
+fn the_preview_shows_worktrees_and_history() {
+    let fx = Fx::new();
+    let repo = repo_with_commit(&fx, "code/repo");
     script(
         &fx.p("bin/wt"),
         "#!/bin/sh\necho \"WT $* COLUMNS=$COLUMNS\"\n",
@@ -1062,9 +1066,37 @@ fn the_preview_shows_worktrees_and_history() {
 
     let plain = fx.project("code/plain");
     assert!(text(&fx.pj(&["--preview", &plain])).contains("Not a git repository"));
+}
 
+#[test]
+fn previewing_a_session_pj_did_not_create_asks_tmux_nothing() {
+    let fx = Fx::new();
+    let repo = repo_with_commit(&fx, "code/repo");
+    let p = fx.project("code/p");
+    fx.pj(&[&p]);
     fx.tmux(&["new-session", "-d", "-s", "other", "-c", &repo]);
-    assert!(text(&fx.pj(&["--preview", "other"])).contains("first commit"));
+    fx.pj_tty(Some("p"), &[("FAKE_FZF_STATUS", "130")], &[]);
+
+    // fzf puts each {N} field of the row into the preview command, quoted for the shell.
+    let args = fx.fzf_args();
+    let mut preview = args
+        .iter()
+        .find_map(|a| a.strip_prefix("--preview="))
+        .expect("a preview")
+        .to_owned();
+    for (i, field) in fx.row("other").split('\t').enumerate() {
+        let quoted = format!("'{}'", field.replace('\'', r"'\''"));
+        preview = preview.replace(&format!("{{{}}}", i + 1), &quoted);
+    }
+    let path = fx.recording_path("calls");
+    let out = fx
+        .cmd("sh")
+        .env("PATH", path)
+        .args(["-c", &preview])
+        .output()
+        .unwrap();
+    assert!(text(&out).contains("first commit"), "{}", text(&out));
+    assert_eq!(fx.calls("calls", &["tmux"]), [0]);
 }
 
 #[test]

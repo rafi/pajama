@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::history;
 use crate::paths;
 use crate::text::{age, basename, pad_left, pad_right, sh_quote, shorten, tilde, width};
-use crate::tmux::{self, Session};
+use crate::tmux::Session;
 
 const DIM: &str = "\x1b[2m";
 const BOLD: &str = "\x1b[1m";
@@ -23,6 +23,7 @@ const RESET: &str = "\x1b[0m";
 
 struct Row {
     target: String,
+    dir: String,
     marks: String,
     label: String,
     win: String,
@@ -39,7 +40,8 @@ fn now() -> i64 {
         .unwrap_or(0)
 }
 
-/// The header, then per target the target, a tab, and the row fzf shows.
+/// The header, then per target the target, a tab, the folder the preview shows, a tab, and
+/// the row fzf shows.
 pub fn rows(sessions: &[Session], targets: &[String]) -> Vec<String> {
     let now = now();
     let mut rows = Vec::new();
@@ -47,6 +49,7 @@ pub fn rows(sessions: &[Session], targets: &[String]) -> Vec<String> {
         let running = sessions.iter().find(|s| s.entry == *target);
         let mut row = Row {
             target: target.clone(),
+            dir: target.clone(),
             marks: String::new(),
             label: String::new(),
             win: String::new(),
@@ -84,8 +87,9 @@ pub fn rows(sessions: &[Session], targets: &[String]) -> Vec<String> {
                     row.stale = true;
                 }
             }
-        } else if running.is_some() {
+        } else if let Some(s) = running {
             kind = '◇';
+            row.dir = s.dir.clone();
         } else {
             continue;
         }
@@ -116,9 +120,9 @@ pub fn rows(sessions: &[Session], targets: &[String]) -> Vec<String> {
     let w_window = widest("Window", |r| &r.window);
     let w_age = widest("Age", |r| &r.age);
 
-    // fzf takes the header from the first line. Its empty first field is never printed.
+    // fzf takes the header from the first line. Its empty first fields are never printed.
     let mut lines = vec![format!(
-        "\t   {BOLD}{}{RESET}",
+        "\t\t   {BOLD}{}{RESET}",
         [
             pad_right("Name", w_name),
             pad_left("Win", w_win),
@@ -151,8 +155,9 @@ pub fn rows(sessions: &[Session], targets: &[String]) -> Vec<String> {
         if r.marks.ends_with('◇') {
             shown = format!("{DIM}{shown}{RESET}");
         }
-        // fzf goes to the target before the tab and shows only the row after it.
-        lines.push(format!("{}\t{shown}", r.target));
+        // fzf goes to the target before the first tab, passes the folder after it to the
+        // preview, and shows only the rest.
+        lines.push(format!("{}\t{}\t{shown}", r.target, r.dir));
     }
     lines
 }
@@ -198,7 +203,7 @@ pub fn pick(query: &str, sessions: &[Session], targets: &[String]) -> Result<Str
     cmd.args(["--exit-0", "--ansi", "--query", query])
         .args([
             "--delimiter=\t",
-            "--with-nth=2",
+            "--with-nth=3..",
             "--header-lines=1",
             "--height=90%",
             "--layout=reverse",
@@ -215,7 +220,7 @@ pub fn pick(query: &str, sessions: &[Session], targets: &[String]) -> Result<Str
             "--color=fg:-1,bg:-1,header:-1,hl:108,fg+:237,bg+:251,hl+:108",
             "--with-shell=sh -c",
         ])
-        .arg(format!("--preview={} --preview {{1}}", sh_quote(&exe)))
+        .arg(format!("--preview={} --preview {{2}}", sh_quote(&exe)))
         .arg(format!("--preview-window={}", preview_window(cols, lines)))
         .arg(
             "--bind=alt-p:toggle-preview,ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down",
@@ -293,37 +298,20 @@ fn terminal_size() -> (usize, usize) {
     }
 }
 
-/// The preview of TARGET: with worktrunk installed, the project's worktrees as `wt list`
-/// draws them, sized to the pane, then the last 15 commits.
-pub fn preview(target: &str) {
-    let dir = if target.starts_with('/') {
-        target.to_owned()
-    } else {
-        // A session pj did not create has no project, so its active pane's folder stands in.
-        // Sessions pj created print an empty line, and the folder comes last since it may
-        // hold a tab.
-        let format = format!(
-            "#{{?@pj_root,,#{{session_name}}{}#{{pane_current_path}}}}",
-            tmux::SEP
-        );
-        let out = tmux::run(&["list-sessions", "-F", &format]);
-        let found = out.stdout.lines().find_map(|line| {
-            let (name, dir) = line.split_once(tmux::SEP)?;
-            (crate::text::plain_name(name) == target).then(|| dir.to_owned())
-        });
-        match found {
-            Some(dir) => dir,
-            None => return,
-        }
-    };
+/// The preview of folder DIR: with worktrunk installed, its worktrees as `wt list` draws
+/// them, sized to the pane, then the last 15 commits.
+pub fn preview(dir: &str) {
+    if dir.is_empty() {
+        return;
+    }
     let is_repo = Command::new("git")
-        .args(["-C", &dir, "rev-parse", "--git-dir"])
+        .args(["-C", dir, "rev-parse", "--git-dir"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|s| s.success());
     if !is_repo {
-        println!("{DIM}Not a git repository: {}{RESET}", tilde(&dir));
+        println!("{DIM}Not a git repository: {}{RESET}", tilde(dir));
         return;
     }
     let width = env::var("FZF_PREVIEW_COLUMNS")
@@ -333,7 +321,7 @@ pub fn preview(target: &str) {
     // fzf reads the pane through a pipe, where wt would drop its colors. Its summary line
     // goes to stderr.
     let wt = Command::new("wt")
-        .args(["-C", &dir, "list"])
+        .args(["-C", dir, "list"])
         .env("CLICOLOR_FORCE", "1")
         .env("COLUMNS", &width)
         .stderr(Stdio::null())
@@ -343,7 +331,7 @@ pub fn preview(target: &str) {
     }
     let _ = std::io::stdout().flush();
     let log = Command::new("git")
-        .args(["-C", &dir, "log", "-15", "--graph", "--color=always"])
+        .args(["-C", dir, "log", "-15", "--graph", "--color=always"])
         .arg("--format=%C(auto)%h%d%C(reset) %s %C(dim)%cr · %an%C(reset)")
         .stderr(Stdio::null())
         .status();
