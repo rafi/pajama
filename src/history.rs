@@ -39,16 +39,20 @@ pub fn recent(sessions: &[Session]) -> Vec<String> {
         .collect()
 }
 
-/// Moves each entry to the top, the last one ending first. At most 100 are kept.
+/// Moves each entry to the top, the last one ending first. At most 100 are kept. A list
+/// that comes out the same is not written, as when a hook repeats what pj just wrote.
 pub fn add(entries: &[&str]) {
+    let old = read();
     let mut list: Vec<String> = entries.iter().rev().map(|e| e.to_string()).collect();
     list.extend(
-        read()
-            .into_iter()
-            .filter(|e| !entries.contains(&e.as_str())),
+        old.iter()
+            .filter(|e| !entries.contains(&e.as_str()))
+            .cloned(),
     );
     list.truncate(100);
-    let _ = paths::write_atomic(&file(), &(list.join("\n") + "\n"));
+    if list != old {
+        let _ = paths::write_atomic(&file(), &(list.join("\n") + "\n"));
+    }
 }
 
 /// Known project roots once each, recent ones first, then the rest sorted.

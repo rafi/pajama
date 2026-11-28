@@ -40,11 +40,14 @@ pub fn save(id: &str) -> bool {
         return false;
     };
     let mut text = format!("root\t{root}\n");
+    let config = paths::config_dir();
+    let resume = config.join("resume");
+    let programs = fs::read_to_string(config.join("programs")).unwrap_or_default();
     for f in lines.map(|l| l.splitn(6, tmux::SEP).collect::<Vec<_>>()) {
         if f.len() < 6 {
             continue;
         }
-        let command = pane_command(f[4]);
+        let command = pane_command(f[4], &resume, &programs);
         // A field holding a tab or newline would break the line, so they become spaces.
         let fields: Vec<String> = [f[0], f[1], f[2], f[3], f[5], &command]
             .iter()
@@ -57,9 +60,10 @@ pub fn save(id: &str) -> bool {
 }
 
 /// The command that brings back the program a pane's shell runs. An executable
-/// `resume/PROGRAM` in the config folder decides for that program, given its PID. Other
-/// programs come back with their full command line when the programs file lists them.
-pub fn pane_command(shell_pid: &str) -> String {
+/// `PROGRAM` in the RESUME folder decides for that program, given its PID. Other programs
+/// come back with their full command line when PROGRAMS, the text of the programs file,
+/// lists them.
+fn pane_command(shell_pid: &str, resume: &Path, programs: &str) -> String {
     let Some(child) = shell_pid.parse().ok().and_then(process::first_child) else {
         return String::new();
     };
@@ -67,8 +71,7 @@ pub fn pane_command(shell_pid: &str) -> String {
         .args
         .first()
         .map_or("", |a| a.rsplit('/').next().unwrap_or(a));
-    let config = paths::config_dir();
-    let resume = config.join("resume").join(program);
+    let resume = resume.join(program);
     if !program.is_empty()
         && fs::metadata(&resume).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     {
@@ -79,11 +82,10 @@ pub fn pane_command(shell_pid: &str) -> String {
             .map(|out| String::from_utf8_lossy(&out.stdout).trim_end().to_owned())
             .unwrap_or_default();
     }
-    let listed = fs::read_to_string(config.join("programs")).is_ok_and(|text| {
-        text.lines()
-            .map(str::trim)
-            .any(|line| !line.starts_with('#') && line == program)
-    });
+    let listed = programs
+        .lines()
+        .map(str::trim)
+        .any(|line| !line.starts_with('#') && line == program);
     if listed {
         child.args.join(" ")
     } else {

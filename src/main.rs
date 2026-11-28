@@ -221,20 +221,20 @@ fn open(root: &str, snap: &Snapshot) -> i32 {
 
 /// Commands that tag session ID as project ROOT and install pj's hooks.
 /// The hooks are global because a per-session hook would hide other tools' hooks of the
-/// same name. They skip sessions without a root, and pass the session number without
-/// its `$` so the shell can't expand it.
+/// same name. They skip sessions without a root. The shell gets the root quoted by tmux,
+/// and the session number without its `$` so it can't expand it.
 fn tag(id: &str, root: &str) -> Vec<String> {
-    let hook = |event: &str| {
+    let hook = |event: &str, arg: &str| {
         format!(
             "if-shell -F '#{{@pj_root}}' \
-             'run-shell -b \"#{{q:@pj_bin}} --hook {event} #{{s/[$]//:session_id}}\"'"
+             'run-shell -b \"#{{q:@pj_bin}} --hook {event} {arg}\"'"
         )
     };
     #[rustfmt::skip]
     let call = [
         "set-option", "-t", id, "@pj_root", &tmux_arg(root), ";",
-        "set-hook", "-g", "client-detached[42]", &hook("detached"), ";",
-        "set-hook", "-g", "client-session-changed[42]", &hook("visited"),
+        "set-hook", "-g", "client-detached[42]", &hook("detached", "#{s/[$]//:session_id}"), ";",
+        "set-hook", "-g", "client-session-changed[42]", &hook("visited", "#{q:@pj_root}"),
     ];
     call.iter().map(|s| s.to_string()).collect()
 }
@@ -286,19 +286,19 @@ fn attach(id: &str, entry: &str, snap: &Snapshot, before: &[String]) -> i32 {
     }
 }
 
-/// Handles tmux hook EVENT for the session whose id is $N.
+/// Handles tmux hook EVENT. A detach passes the number of the session's id, a session
+/// change passes the root of the session the client went to.
 fn hook(args: &[String]) -> i32 {
-    let (Some(event), Some(n)) = (args.first(), args.get(1)) else {
+    let (Some(event), Some(arg)) = (args.first(), args.get(1)) else {
         return 2;
     };
-    let id = format!("${n}");
     match event.as_str() {
-        "detached" => i32::from(!layout::save(&id)),
+        "detached" => i32::from(!layout::save(&format!("${arg}"))),
         "visited" => {
-            // The hook runs only in sessions with a root, so the entry is their root.
-            if let Some(root) = tmux::run(&["display", "-p", "-t", &id, "#{@pj_root}"]).first_line()
-            {
-                history::add(&[&root]);
+            // tmux shows a hook that fails in the pane, and a hook an older pj installed
+            // passes a session number, which is no root.
+            if arg.starts_with('/') {
+                history::add(&[arg]);
             }
             0
         }

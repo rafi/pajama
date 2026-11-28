@@ -387,6 +387,14 @@ fn the_hooks_skip_sessions_pj_did_not_create() {
 }
 
 #[test]
+fn a_switch_hook_from_an_older_pj_exits_quietly() {
+    let fx = Fx::new();
+    let out = fx.pj(&["--hook", "visited", "3"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out));
+    assert!(fx.recent().is_empty());
+}
+
+#[test]
 fn switching_sessions_in_tmux_records_the_project_through_its_hook() {
     let fx = Fx::new();
     let a = fx.project("code/a");
@@ -920,10 +928,10 @@ fn each_command_reads_tmux_once() {
         .unwrap();
     fx.cmd(PJ)
         .env("PATH", &path)
-        .args(["--hook", "visited", &n])
+        .args(["--hook", "visited", &p3])
         .output()
         .unwrap();
-    assert_eq!(fx.calls("calls", &["tmux"]), [2], "hooks");
+    assert_eq!(fx.calls("calls", &["tmux"]), [1], "hooks");
 }
 
 #[test]

@@ -11,16 +11,6 @@ pub struct Out {
     pub stdout: String,
 }
 
-impl Out {
-    pub fn first_line(&self) -> Option<String> {
-        self.stdout
-            .lines()
-            .next()
-            .filter(|l| !l.is_empty())
-            .map(String::from)
-    }
-}
-
 /// Runs one tmux call. Arguments that are a lone ";" chain commands into the same call.
 ///
 /// Without -u, tmux 3.4 prints tabs and non-ASCII names as `_` unless the locale is UTF-8.
