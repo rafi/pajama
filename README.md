@@ -46,45 +46,95 @@ Needs tmux, and fzf 0.66 or newer for the picker.
 
 ## Usage
 
-| Command | Does |
-|---|---|
-| `pj PATH` | Open the project at that directory, creating its session if needed. |
-| `pj NAME` | Open the project whose folder is named `NAME`, or picker if several match. |
-| `pj` | Pick a project or session, most recent first. |
-| `pj -` | Go back to the previous project or session. |
-| `pj save [NAME]` | Save a session's layout, the current one by default. |
-| `pj stop [NAME]` | Save the layout and close the session. |
-| `pj --version` | Print the version. |
+```sh
+pj ~/code/app   # open the project in that folder
+pj app          # open it by folder name
+pj              # pick a project from a list
+pj -            # go back to the previous one
+```
 
-An argument is a path when it contains `/`, is `.` or `..`, or starts with `~`. `NAME`
-after `save` and `stop` is a session name as `tmux ls` shows it.
+### Opening a project
 
-`pj NAME` matches project folder names and running session names. Only letters, digits,
-`.`, `_` and `-` count, so status marks that agent tools might add to a session name
-are ignored: `main⏳` matches `main`.
+Each project gets its own tmux session. When you open one:
 
-pj also switches to tmux sessions it did not create, such as one started with `tmux new`.
-When such a session has the same name as a project, `pj NAME` opens the project. pj never
-saves the layout of these sessions, because they have no project folder, but `pj -` goes
-back to one you left with pj.
+- **It's already running:** pj switches to its session.
+- **It isn't running:** pj creates the session from the project's saved layout. A project
+  opened for the first time uses `default.tsv` from the config folder, or one shell window
+  without it.
+- **Inside tmux** pj switches your client. **Outside tmux** it attaches.
 
-Inside tmux pj switches the client, outside it attaches. Layouts are saved when you
-detach, and on `pj save` and `pj stop`. To notice detaching and switching, pj sets the
-global tmux hooks `client-detached[42]` and `client-session-changed[42]`, which act only
-in its own sessions and leave your other hooks running.
+pj reads the argument as a path when it contains `/`, is `.` or `..`, or starts with `~`.
+Anything else is a name:
+
+- A name matches project folder names and running session names.
+- Only letters, digits, `.`, `_` and `-` count. Status marks that agent tools add to a
+  session name are ignored, so `main⏳` matches `main`.
+- When several projects match, the picker opens with just those.
+
+### Going back
+
+`pj -` returns to the project or session you were in before. Repeat it to flip between
+two. The history is shared by all your terminals and survives a tmux restart. If the
+previous project has been closed, `pj -` opens it again.
+
+To flip with a key, add this to your tmux config:
+
+```tmux
+bind - run-shell "pj -"
+```
+
+### Saving and closing
+
+A session's layout is saved:
+
+- when you detach from it
+- on `pj save`, for the current session or the one you name
+- on `pj stop`, which then closes the session
+
+A name after `save` and `stop` is a session name as `tmux ls` shows it.
+
+### Sessions pj didn't create
+
+pj can switch to any tmux session, including one started with `tmux new`:
+
+- Its layout is never saved, because it has no project folder.
+- `pj -` can go back to it if you left it with pj.
+- If it shares a name with a project, `pj NAME` opens the project.
 
 ### The picker
 
-A table of your projects and running sessions, most recent first, with columns for the
-name, the window count, the active window, the time since last use, and the path. `▸`
-marks the session you are in, `●` a running project, and `◇` a session pj did not create.
-A stopped project is dimmed and shows the window count and age of its saved layout.
-
-The preview shows the `wt list` table of the folder's worktrees when
-[worktrunk](https://worktrunk.dev) is installed, then the last 15 commits. `alt-p` hides
-it and `ctrl-u`/`ctrl-d` scroll it.
-
 ![The picker with running, stopped and plain tmux sessions, and a project's commits](https://raw.githubusercontent.com/rafi/assets/main/repo/pajama/picker.png)
+
+Running `pj` with no argument lists your projects and running sessions, most recent
+first. Each row shows the name, window count, active window, time since last use and
+path.
+
+| Mark | Meaning |
+|---|---|
+| `▸` | the session you are in |
+| `●` | a running project |
+| `◇` | a session pj didn't create |
+| dimmed | a stopped project, with the window count and age of its saved layout |
+
+The preview shows the folder's worktrees with `wt list` when
+[worktrunk](https://worktrunk.dev) is installed, then its last 15 commits. `alt-p` hides
+the preview and `ctrl-u`/`ctrl-d` scroll it.
+
+### All commands
+
+| Command | Does |
+|---|---|
+| `pj PATH` | Open the project in that folder. |
+| `pj NAME` | Open the project or session by name. |
+| `pj` | Pick a project or session. |
+| `pj -` | Go back to the previous project or session. |
+| `pj save [NAME]` | Save a session's layout. |
+| `pj stop [NAME]` | Save a session's layout and close it. |
+| `pj --version` | Print the version. |
+
+To notice when you detach or switch sessions, pj sets the global tmux hooks
+`client-detached[42]` and `client-session-changed[42]`. They act only in pj's sessions
+and leave your other hooks running.
 
 ## Files
 
@@ -113,12 +163,6 @@ cargo test --release
 ```
 
 Every integration test runs its own tmux server with its own state and config folders.
-
-## Demo
-
-`just demo` records the GIF and the picker screenshot with
-[VHS](https://github.com/charmbracelet/vhs) against a throwaway sandbox with its own
-projects and tmux server, and copies them to `~/code/rafi/assets/repo/pajama`.
 
 ## License
 
