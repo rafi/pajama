@@ -59,3 +59,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: gh release create "$GITHUB_REF_NAME" pajama-*.tar.gz SHA256SUMS --verify-tag --generate-notes
+
+  # Needs the HOMEBREW_TAP_TOKEN secret: a fine-grained token with
+  # Contents read and write on rafi/homebrew-tap only.
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Render the formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --pattern SHA256SUMS
+          .github/homebrew/render.sh "$GITHUB_REF_NAME" SHA256SUMS >pajama.rb
+      - uses: actions/checkout@v7
+        with:
+          repository: rafi/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Push the formula
+        working-directory: tap
+        run: |
+          cp ../pajama.rb .
+          git add pajama.rb
+          if git diff --cached --quiet; then
+            echo "Formula unchanged"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898299+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore(pajama): ${GITHUB_REF_NAME#v}"
+          git push
