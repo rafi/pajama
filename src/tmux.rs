@@ -63,7 +63,7 @@ pub struct Snapshot {
     pub hooks: String,
 }
 
-/// Reads every session in one tmux call, so a command makes one more call at most, to act.
+/// Reads every session, and the hooks stamp, in one tmux call.
 pub fn snapshot() -> Snapshot {
     let format = [
         "#{session_id}",

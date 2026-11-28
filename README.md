@@ -6,8 +6,8 @@ you choose come back when it reopens.
 
 ![pj opening a project from the picker, then going back with pj -](https://raw.githubusercontent.com/rafi/assets/main/repo/pajama/demo.gif)
 
-It has no dependencies beyond the standard library, and every command reads tmux once and
-acts in one more call.
+It has no dependencies beyond the standard library, and most commands need just one to
+three tmux calls.
 
 ## Install
 

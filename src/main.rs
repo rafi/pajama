@@ -1,7 +1,8 @@
 //! pj opens a tmux session per project, by path, folder name, picker or history, and
 //! brings back its saved layout. A project is its directory, the session name only a label.
 //!
-//! Every command reads all sessions in one tmux call and acts in one more.
+//! Every command reads all sessions in one tmux call. Switching acts in one more, and
+//! opening a stopped project builds it in another, plus one to attach outside tmux.
 
 mod history;
 mod layout;
