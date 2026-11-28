@@ -66,8 +66,15 @@ impl Session {
 /// still hold a tab, so a path is always the last field and is split off with splitn.
 pub const SEP: &str = "\t";
 
-/// Every session in one tmux call, so a command makes one more call at most, to act.
-pub fn snapshot() -> Vec<Session> {
+/// Every session, and the binary pj's global hooks run.
+pub struct Snapshot {
+    pub sessions: Vec<Session>,
+    /// The global `@pj_bin`, empty when it is unset.
+    pub bin: String,
+}
+
+/// Reads every session in one tmux call, so a command makes one more call at most, to act.
+pub fn snapshot() -> Snapshot {
     let format = [
         "#{session_id}",
         "#{session_name}",
@@ -79,22 +86,25 @@ pub fn snapshot() -> Vec<Session> {
     .join(SEP);
     let mut current = None;
     let mut text = None;
+    // The global @pj_bin comes last and prints nothing when unset, so it is the one line
+    // that does not start with a session id.
+    let tail = [
+        "list-sessions",
+        "-F",
+        format.as_str(),
+        ";",
+        "show-options",
+        "-gqv",
+        "@pj_bin",
+    ];
     // TMUX_PANE names the pane this shell runs in. Without it tmux would guess the most
     // recent session. Asking in the same call saves one.
     if env::var_os("TMUX").is_some()
         && let Ok(pane) = env::var("TMUX_PANE")
     {
-        let out = run(&[
-            "display",
-            "-p",
-            "-t",
-            &pane,
-            "#{session_id}",
-            ";",
-            "list-sessions",
-            "-F",
-            &format,
-        ]);
+        let mut call = vec!["display", "-p", "-t", pane.as_str(), "#{session_id}", ";"];
+        call.extend(tail);
+        let out = run(&call);
         if out.ok
             && let Some((first, rest)) = out.stdout.split_once('\n')
         {
@@ -102,28 +112,33 @@ pub fn snapshot() -> Vec<Session> {
             text = Some(rest.to_owned());
         }
     }
-    let text = text.unwrap_or_else(|| run(&["list-sessions", "-F", &format]).stdout);
-    text.lines()
-        .filter_map(|line| {
-            let f: Vec<&str> = line.splitn(6, SEP).collect();
-            if f.len() < 6 {
-                return None;
-            }
-            Some(Session {
-                id: f[0].to_owned(),
-                entry: if f[5].is_empty() {
-                    plain_name(f[1])
-                } else {
-                    f[5].to_owned()
-                },
-                name: f[1].to_owned(),
-                windows: f[2].to_owned(),
-                window: f[3].to_owned(),
-                activity: f[4].parse().unwrap_or(0),
-                current: current.as_deref() == Some(f[0]),
-            })
-        })
-        .collect()
+    let text = text.unwrap_or_else(|| run(&tail).stdout);
+    let mut bin = String::new();
+    let mut sessions = Vec::new();
+    for line in text.lines() {
+        if !line.starts_with('$') {
+            bin = line.to_owned();
+            continue;
+        }
+        let f: Vec<&str> = line.splitn(6, SEP).collect();
+        if f.len() < 6 {
+            continue;
+        }
+        sessions.push(Session {
+            id: f[0].to_owned(),
+            entry: if f[5].is_empty() {
+                plain_name(f[1])
+            } else {
+                f[5].to_owned()
+            },
+            name: f[1].to_owned(),
+            windows: f[2].to_owned(),
+            window: f[3].to_owned(),
+            activity: f[4].parse().unwrap_or(0),
+            current: current.as_deref() == Some(f[0]),
+        });
+    }
+    Snapshot { sessions, bin }
 }
 
 pub fn find_entry<'a>(sessions: &'a [Session], entry: &str) -> Option<&'a Session> {

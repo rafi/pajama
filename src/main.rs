@@ -17,7 +17,7 @@ use std::path::Path;
 use std::process::Command;
 
 use text::{basename, plain_name, tilde, tmux_arg};
-use tmux::Session;
+use tmux::Snapshot;
 
 const USAGE: &str = "usage: pj [PATH|NAME|-]
        pj save [NAME]
@@ -61,7 +61,7 @@ fn save_or_stop(args: &[String]) -> i32 {
     if args.len() > 2 {
         return fail(2, &format!("usage: pj {} [NAME]", args[0]));
     }
-    let sessions = tmux::snapshot();
+    let sessions = tmux::snapshot().sessions;
     let session = match args.get(1) {
         Some(name) => match tmux::find_name(&sessions, name) {
             Some(s) => s,
@@ -107,16 +107,17 @@ fn open_command(args: &[String]) -> i32 {
     if args.len() > 1 {
         return fail(2, USAGE);
     }
-    let sessions = tmux::snapshot();
+    let snap = tmux::snapshot();
+    let sessions = snap.sessions.as_slice();
     // A target is a project root, or the plain name of a session pj did not create.
     let target = match args.first().map(String::as_str) {
-        None => match picker::pick("", &sessions, &[]) {
+        None => match picker::pick("", sessions, &[]) {
             Ok(t) => t,
             Err(code) => return code,
         },
         Some("-") => {
-            let current = tmux::current(&sessions).map(|s| s.entry.as_str());
-            match history::recent(&sessions)
+            let current = tmux::current(sessions).map(|s| s.entry.as_str());
+            match history::recent(sessions)
                 .into_iter()
                 .find(|e| Some(e.as_str()) != current)
             {
@@ -137,24 +138,24 @@ fn open_command(args: &[String]) -> i32 {
             }
         }
         Some(name) => {
-            let mut matches: Vec<String> = history::projects(&sessions)
+            let mut matches: Vec<String> = history::projects(sessions)
                 .into_iter()
                 .filter(|r| basename(r) == name)
                 .collect();
-            if let Some(s) = tmux::find_name(&sessions, name) {
+            if let Some(s) = tmux::find_name(sessions, name) {
                 if s.is_project() {
                     if !matches.contains(&s.entry) {
                         matches.push(s.entry.clone());
                     }
                 } else if matches.is_empty() {
                     // A session pj did not create has no project, so pj only switches to it.
-                    return attach(&s.id, &s.entry, &sessions, &[]);
+                    return attach(&s.id, &s.entry, &snap, &[]);
                 }
             }
             let picked = match matches.len() {
                 1 => Ok(matches.remove(0)),
-                0 => picker::pick(name, &sessions, &[]),
-                _ => picker::pick(name, &sessions, &matches),
+                0 => picker::pick(name, sessions, &[]),
+                _ => picker::pick(name, sessions, &matches),
             };
             match picked {
                 Ok(t) => t,
@@ -162,23 +163,24 @@ fn open_command(args: &[String]) -> i32 {
             }
         }
     };
-    go(&target, &sessions)
+    go(&target, &snap)
 }
 
-fn go(target: &str, sessions: &[Session]) -> i32 {
+fn go(target: &str, snap: &Snapshot) -> i32 {
     if target.starts_with('/') {
-        open(target, sessions)
-    } else if let Some(s) = tmux::find_entry(sessions, target) {
-        attach(&s.id, target, sessions, &[])
+        open(target, snap)
+    } else if let Some(s) = tmux::find_entry(&snap.sessions, target) {
+        attach(&s.id, target, snap, &[])
     } else {
         fail(1, &format!("no session '{target}'"))
     }
 }
 
 /// Goes to the session of project ROOT, restoring it from its saved layout if needed.
-fn open(root: &str, sessions: &[Session]) -> i32 {
+fn open(root: &str, snap: &Snapshot) -> i32 {
+    let sessions = snap.sessions.as_slice();
     if let Some(s) = tmux::find_entry(sessions, root) {
-        return attach(&s.id, root, sessions, &[]);
+        return attach(&s.id, root, snap, &[]);
     }
     if !Path::new(root).is_dir() {
         return fail(1, &format!("{root} no longer exists"));
@@ -214,7 +216,7 @@ fn open(root: &str, sessions: &[Session]) -> i32 {
     }
     let mut finish = tag(&restored.id, root);
     finish.extend(restored.finish);
-    attach(&restored.id, root, sessions, &finish)
+    attach(&restored.id, root, snap, &finish)
 }
 
 /// Commands that tag session ID as project ROOT and install pj's hooks.
@@ -222,9 +224,6 @@ fn open(root: &str, sessions: &[Session]) -> i32 {
 /// same name. They skip sessions without a root, and pass the session number without
 /// its `$` so the shell can't expand it.
 fn tag(id: &str, root: &str) -> Vec<String> {
-    let exe = env::current_exe()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "pj".into());
     let hook = |event: &str| {
         format!(
             "if-shell -F '#{{@pj_root}}' \
@@ -234,7 +233,6 @@ fn tag(id: &str, root: &str) -> Vec<String> {
     #[rustfmt::skip]
     let call = [
         "set-option", "-t", id, "@pj_root", &tmux_arg(root), ";",
-        "set-option", "-t", id, "@pj_bin", &tmux_arg(&exe), ";",
         "set-hook", "-g", "client-detached[42]", &hook("detached"), ";",
         "set-hook", "-g", "client-session-changed[42]", &hook("visited"),
     ];
@@ -244,10 +242,23 @@ fn tag(id: &str, root: &str) -> Vec<String> {
 /// Goes to session ID, first running the tmux commands in BEFORE in the same call. The
 /// session the client leaves goes into history under the one it goes to, so `pj -` can
 /// return to it. Both entries come from the snapshot, so tmux sees one call.
-fn attach(id: &str, entry: &str, sessions: &[Session], before: &[String]) -> i32 {
-    match tmux::current(sessions) {
+fn attach(id: &str, entry: &str, snap: &Snapshot, before: &[String]) -> i32 {
+    match tmux::current(&snap.sessions) {
         Some(current) if current.id != id => history::add(&[&current.entry, entry]),
         _ => history::add(&[entry]),
+    }
+    // The hooks run whichever pj ran last, so an upgrade that moves the binary doesn't
+    // leave them calling a path that is gone.
+    let exe = paths::exe();
+    let mut call = Vec::new();
+    if snap.bin != exe {
+        call.extend(["set-option", "-g", "@pj_bin", &tmux_arg(&exe)].map(String::from));
+    }
+    if !before.is_empty() {
+        if !call.is_empty() {
+            call.push(";".into());
+        }
+        call.extend_from_slice(before);
     }
     let switch = || {
         Command::new("tmux")
@@ -256,18 +267,17 @@ fn attach(id: &str, entry: &str, sessions: &[Session], before: &[String]) -> i32
             .map_or(1, |s| s.code().unwrap_or(1))
     };
     if env::var_os("TMUX").is_some() {
-        if before.is_empty() {
+        if call.is_empty() {
             return switch();
         }
         // A failed command ends a tmux call, and BEFORE may end in a stale layout, so the
         // switch gets its own call when the shared one fails.
-        let mut call = before.to_vec();
         call.extend([";", "switch-client", "-t", id].map(String::from));
         if tmux::run(&call).ok { 0 } else { switch() }
     } else {
         // Commands after attach-session in one call never run, so attaching comes last.
-        if !before.is_empty() {
-            tmux::run(before);
+        if !call.is_empty() {
+            tmux::run(&call);
         }
         let err = Command::new("tmux")
             .args(["attach-session", "-t", id])
@@ -297,7 +307,7 @@ fn hook(args: &[String]) -> i32 {
 }
 
 fn complete(what: &str) -> i32 {
-    let sessions = tmux::snapshot();
+    let sessions = tmux::snapshot().sessions;
     match what {
         "projects" => {
             for root in history::projects(&sessions) {

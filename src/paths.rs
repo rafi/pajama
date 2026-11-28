@@ -21,6 +21,13 @@ pub fn config_dir() -> PathBuf {
     base("XDG_CONFIG_HOME", ".config").join("pj")
 }
 
+/// This binary's path, for tmux hooks and fzf to call back.
+pub fn exe() -> String {
+    env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "pj".into())
+}
+
 /// Like vim's undo files, the name is the full path with each / replaced by %.
 pub fn layout_file(root: &str) -> PathBuf {
     state_dir().join(format!("{}.tsv", root.replace('/', "%")))

@@ -387,6 +387,33 @@ fn the_hooks_skip_sessions_pj_did_not_create() {
 }
 
 #[test]
+fn switching_sessions_in_tmux_records_the_project_through_its_hook() {
+    let fx = Fx::new();
+    let a = fx.project("code/a");
+    let odd = fx.project("code/it's $HOME \"q\"/odd");
+    fx.pj(&[&a]);
+    fx.pj(&[&odd]);
+    // A binary that moved, as after an upgrade, is replaced by the next pj that runs.
+    fx.tmux(&["set-option", "-g", "@pj_bin", "/gone/pj"]);
+    fx.pj(&[&a]);
+    assert_eq!(fx.tmux(&["show-options", "-gv", "@pj_bin"]), PJ);
+
+    fs::write(fx.p("state/pj/recent"), format!("{a}\n")).unwrap();
+    let mut client = fx.attach_client("a");
+    let name = fx.tmux(&["list-clients", "-t", "=a:", "-F", "#{client_name}"]);
+    fx.tmux(&["switch-client", "-c", &name, "-t", "=odd:"]);
+    for _ in 0..30 {
+        if fx.recent().first() == Some(&odd) {
+            break;
+        }
+        sleep(Duration::from_millis(100));
+    }
+    let _ = client.kill();
+    let _ = client.wait();
+    assert_eq!(fx.recent(), [odd, a]);
+}
+
+#[test]
 fn folders_with_the_same_name_get_numbered_sessions() {
     let fx = Fx::new();
     let a = fx.project("code/a/app");

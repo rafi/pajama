@@ -184,9 +184,7 @@ pub fn pick(query: &str, sessions: &[Session], targets: &[String]) -> Result<Str
     if rows.len() < 2 {
         return no_match();
     }
-    let exe = env::current_exe()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "pj".into());
+    let exe = paths::exe();
     let (cols, lines) = terminal_size();
     let mut cmd = Command::new("fzf");
     // Only a typed name may open its single match directly. Bare pj always shows the list.
