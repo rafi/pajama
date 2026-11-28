@@ -10,6 +10,25 @@ build:
 test:
   cargo test --release
 
+# check, push master and tag the version in Cargo.toml, which starts the release build
+release:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  tag="v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+  fail() { echo "release: $*" >&2; exit 1; }
+  [ "$(git branch --show-current)" = master ] || fail "not on master"
+  [ -z "$(git status --porcelain --untracked-files=no)" ] || fail "uncommitted changes"
+  git rev-parse -q --verify "refs/tags/$tag" >/dev/null && fail "$tag exists here"
+  git ls-remote --exit-code --tags origin "$tag" >/dev/null && fail "$tag exists on origin"
+  # --locked fails when Cargo.lock still holds the old version.
+  cargo fmt --check
+  cargo clippy --release --all-targets --locked -- -D warnings
+  cargo test --release --locked
+  git push origin master
+  git tag "$tag"
+  git push origin "$tag"
+  echo "pushed $tag, follow the build with: gh run watch -R rafi/pajama"
+
 # record the demo GIF and screenshots against a temp directory
 demo: build
   #!/usr/bin/env bash
