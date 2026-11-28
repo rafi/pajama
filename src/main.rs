@@ -233,13 +233,15 @@ fn tag(id: &str, root: &str) -> Vec<String> {
 ///
 /// The hooks are global because a per-session hook would hide other tools' hooks of the
 /// same name. They skip sessions without a root. The shell gets the root quoted by tmux,
-/// and the session number without its `$` so it can't expand it.
+/// and the session number without its `$` so it can't expand it. When the binary has
+/// moved since pj last ran, they run `pj` from PATH. Single quotes inside braces keep tmux
+/// from reading `$b` as one of its variables.
 fn install_hooks(installed: &str) -> Vec<String> {
     let exe = paths::exe();
     let hook = |event: &str, arg: &str| {
         format!(
-            "if-shell -F '#{{@pj_root}}' \
-             'run-shell -b \"#{{q:@pj_bin}} --hook {event} {arg}\"'"
+            "if-shell -F '#{{@pj_root}}' {{ run-shell -b \
+             'b=#{{q:@pj_bin}}; [ -x \"$b\" ] || b=pj; exec \"$b\" --hook {event} {arg}' }}"
         )
     };
     let detached = hook("detached", "#{s/[$]//:session_id}");

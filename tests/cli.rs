@@ -380,6 +380,33 @@ fn hooks_an_older_pj_installed_are_replaced_by_the_next_switch() {
 }
 
 #[test]
+fn hooks_run_pj_from_path_when_the_binary_is_gone() {
+    let fx = Fx::new();
+    let a = fx.project("code/a");
+    let b = fx.project("code/b");
+    fx.pj(&[&a]);
+    fx.pj(&[&b]);
+    std::os::unix::fs::symlink(PJ, fx.p("bin/pj")).unwrap();
+    fx.tmux(&["set-option", "-g", "@pj_bin", "/gone/pj"]);
+
+    fs::write(fx.p("state/pj/recent"), format!("{a}\n")).unwrap();
+    let mut client = fx.attach_client("a");
+    let name = fx.tmux(&["list-clients", "-t", "=a:", "-F", "#{client_name}"]);
+    fx.tmux(&["switch-client", "-c", &name, "-t", "=b:"]);
+    for _ in 0..30 {
+        if fx.recent().first() == Some(&b) {
+            break;
+        }
+        sleep(Duration::from_millis(100));
+    }
+    let _ = client.kill();
+    let _ = client.wait();
+    assert_eq!(fx.recent(), [b, a]);
+    let messages = fx.tmux(&["show-messages"]);
+    assert!(!messages.contains("returned"), "{messages}");
+}
+
+#[test]
 fn the_hooks_skip_sessions_pj_did_not_create() {
     let fx = Fx::new();
     let root = fx.project("code/app");
